@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Save, X, Plus, Loader2, ScanLine } from 'lucide-react';
 import {
   getVehicles,
@@ -7,17 +7,21 @@ import {
   getCategories,
   createCategory,
   createServiceRecord,
+  updateServiceRecord,
   uploadInvoices,
   getExchangeRate,
   analyzeInvoice,
 } from '../api';
 import DropZone from './ui/DropZone';
-import { showSuccess, showError, showInfo } from './ui/Toast';
+import { showSuccess, showError } from './ui/Toast';
 import { format } from 'date-fns';
 
 export default function ServiceForm() {
   const { id: vehicleId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const editRecord = location.state?.editRecord || null;
+  const isEditing = !!editRecord;
 
   const [vehicles, setVehicles] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -27,12 +31,14 @@ export default function ServiceForm() {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [invoiceFiles, setInvoiceFiles] = useState([]);
 
-  const [currency, setCurrency] = useState('AED');
-  const [exchangeRate, setExchangeRate] = useState(1);
+  const [currency, setCurrency] = useState(
+    editRecord?.originalCurrency || editRecord?.currency || 'AED'
+  );
+  const [exchangeRate, setExchangeRate] = useState(editRecord?.exchangeRate || 1);
   const [convertedCost, setConvertedCost] = useState('');
   const [loadingRate, setLoadingRate] = useState(false);
   const [analyzingInvoice, setAnalyzingInvoice] = useState(false);
-  const [invoiceDetected, setInvoiceDetected] = useState(null); // { cost, currency }
+  const [invoiceDetected, setInvoiceDetected] = useState(null);
 
   const currencies = [
     { code: 'AED', name: 'AED - UAE Dirham' },
@@ -58,15 +64,17 @@ export default function ServiceForm() {
   ];
 
   const [form, setForm] = useState({
-    vehicleId: vehicleId || '',
-    categoryId: '',
-    date: format(new Date(), 'yyyy-MM-dd'),
-    kms: '',
-    cost: '',
-    provider: '',
-    notes: '',
-    nextDueKms: '',
-    nextDueDays: '',
+    vehicleId: vehicleId || editRecord?.vehicleId || editRecord?.vehicle_id || '',
+    categoryId: editRecord?.categoryId || editRecord?.category_id || '',
+    date: editRecord?.date
+      ? editRecord.date.substring(0, 10)
+      : format(new Date(), 'yyyy-MM-dd'),
+    kms: editRecord?.kmsAtService || editRecord?.kms_at_service || editRecord?.kms || '',
+    cost: editRecord?.originalCost || editRecord?.cost || '',
+    provider: editRecord?.provider || '',
+    notes: editRecord?.notes || '',
+    nextDueKms: editRecord?.nextDueKms || editRecord?.next_due_kms || '',
+    nextDueDays: editRecord?.nextDueDays || editRecord?.next_due_days || '',
   });
 
   useEffect(() => {
@@ -94,8 +102,8 @@ export default function ServiceForm() {
         setCategories(cList.filter((c) => !c.archived && !c.is_archived));
       }
 
-      // If we have a vehicle ID, load its current KMs as default
-      if (vehicleId) {
+      // If creating (not editing) and we have a vehicle ID, load its current KMs
+      if (!isEditing && vehicleId) {
         try {
           const vData = await getVehicle(vehicleId);
           const v = vData.vehicle || vData;
@@ -104,7 +112,7 @@ export default function ServiceForm() {
             kms: String(v.currentKms || v.current_kms || ''),
           }));
         } catch {
-          // ignore, user can fill in manually
+          // ignore
         }
       }
     } catch {
@@ -130,12 +138,25 @@ export default function ServiceForm() {
         setExchangeRate(data.rate);
         setConvertedCost((Number(form.cost) * data.rate).toFixed(2));
       })
-      .catch(() => {
-        // fallback
-        setConvertedCost('');
-      })
+      .catch(() => setConvertedCost(''))
       .finally(() => setLoadingRate(false));
   }, [currency, form.cost, form.date]);
+
+  // Auto-populate next due from category defaults when category changes (only for new records)
+  const handleCategoryChange = (categoryId) => {
+    handleChange('categoryId', categoryId);
+    if (!isEditing && categoryId) {
+      const cat = categories.find((c) => (c._id || c.id) === categoryId);
+      if (cat) {
+        if (cat.defaultKms && !form.nextDueKms) {
+          handleChange('nextDueKms', String(cat.defaultKms));
+        }
+        if (cat.defaultDays && !form.nextDueDays) {
+          handleChange('nextDueDays', String(cat.defaultDays));
+        }
+      }
+    }
+  };
 
   const handleChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -184,8 +205,17 @@ export default function ServiceForm() {
         nextDueDays: form.nextDueDays ? Number(form.nextDueDays) : null,
       };
 
-      const record = await createServiceRecord(payload);
-      const recordId = record.id || record._id;
+      let recordId;
+      if (isEditing) {
+        const editId = editRecord._id || editRecord.id;
+        const updated = await updateServiceRecord(editId, payload);
+        recordId = updated.id || updated._id || editId;
+        showSuccess('Service record updated!');
+      } else {
+        const record = await createServiceRecord(payload);
+        recordId = record.id || record._id;
+        showSuccess('Service record created!');
+      }
 
       // Upload invoices separately if any
       if (invoiceFiles.length > 0 && recordId) {
@@ -196,7 +226,6 @@ export default function ServiceForm() {
         await uploadInvoices(recordId, invoiceFormData);
       }
 
-      showSuccess('Service record created!');
       navigate(vehicleId ? `/vehicles/${vehicleId}` : '/');
     } catch (err) {
       showError(err.message);
@@ -213,8 +242,10 @@ export default function ServiceForm() {
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div>
-          <h1 className="page-title">Log Service</h1>
-          <p className="page-subtitle">Record a maintenance or service entry</p>
+          <h1 className="page-title">{isEditing ? 'Edit Service' : 'Log Service'}</h1>
+          <p className="page-subtitle">
+            {isEditing ? 'Update this maintenance entry' : 'Record a maintenance or service entry'}
+          </p>
         </div>
       </div>
 
@@ -227,7 +258,7 @@ export default function ServiceForm() {
             className="select"
             value={form.vehicleId}
             onChange={(e) => handleChange('vehicleId', e.target.value)}
-            disabled={loadingData}
+            disabled={loadingData || isEditing}
           >
             <option value="">Select a vehicle</option>
             {vehicles.map((v) => (
@@ -279,12 +310,15 @@ export default function ServiceForm() {
             id="category"
             className="select"
             value={form.categoryId}
-            onChange={(e) => handleChange('categoryId', e.target.value)}
+            onChange={(e) => handleCategoryChange(e.target.value)}
           >
             <option value="">Select a category</option>
             {categories.map((c) => (
               <option key={c._id || c.id} value={c._id || c.id}>
                 {c.name}
+                {c.defaultKms || c.defaultDays
+                  ? ` (${c.defaultKms ? c.defaultKms.toLocaleString() + ' km' : ''}${c.defaultKms && c.defaultDays ? ' / ' : ''}${c.defaultDays ? c.defaultDays + ' days' : ''})`
+                  : ''}
               </option>
             ))}
           </select>
@@ -381,7 +415,6 @@ export default function ServiceForm() {
           <DropZone
             onFilesSelected={(files) => {
               setInvoiceFiles((prev) => [...prev, ...files]);
-              // Auto-analyze the first image file for cost/currency
               const imageFile = files.find((f) =>
                 f.type?.startsWith('image/') ||
                 /\.(jpg|jpeg|png|webp|heic)$/i.test(f.name)
@@ -410,9 +443,7 @@ export default function ServiceForm() {
                       }
                     }
                   })
-                  .catch(() => {
-                    // Silent fail — user can enter manually
-                  })
+                  .catch(() => {})
                   .finally(() => setAnalyzingInvoice(false));
               }
             }}
@@ -495,7 +526,7 @@ export default function ServiceForm() {
           </button>
           <button type="submit" className="btn-primary" disabled={saving}>
             <Save className="w-4 h-4" />
-            {saving ? 'Saving...' : 'Save Service Record'}
+            {saving ? 'Saving...' : isEditing ? 'Update Record' : 'Save Service Record'}
           </button>
         </div>
       </form>

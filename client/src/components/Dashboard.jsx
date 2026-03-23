@@ -186,27 +186,40 @@ export default function Dashboard() {
             ))}
       </div>
 
-      {/* Reminders Section */}
-      {!loading && (Array.isArray(upcoming) && upcoming.length > 0) && (() => {
-        const overdue = upcoming.filter(u => Number(u.isOverdue) === 1 || u.is_overdue === true);
-        const dueSoon = upcoming.filter(u => !(Number(u.isOverdue) === 1 || u.is_overdue === true));
+      {/* Reminders Section — always visible */}
+      {!loading && (() => {
+        const list = Array.isArray(upcoming) ? upcoming : [];
+        const overdue = list.filter(u => Number(u.isOverdue) === 1 || u.is_overdue === true);
+        const dueSoon = list.filter(u => !(Number(u.isOverdue) === 1 || u.is_overdue === true));
+        const hasItems = list.length > 0;
 
         return (
           <div
             onClick={() => setShowReminders(true)}
-            className={`card p-4 cursor-pointer hover:shadow-md transition-shadow border-l-4 ${overdue.length > 0 ? 'border-l-red-500 bg-red-50 dark:bg-red-950/20' : 'border-l-amber-500 bg-amber-50 dark:bg-amber-950/20'}`}
+            className={`card p-4 cursor-pointer hover:shadow-md transition-shadow border-l-4 ${
+              overdue.length > 0
+                ? 'border-l-red-500 bg-red-50 dark:bg-red-950/20'
+                : hasItems
+                  ? 'border-l-amber-500 bg-amber-50 dark:bg-amber-950/20'
+                  : 'border-l-emerald-500 bg-emerald-50 dark:bg-emerald-950/20'
+            }`}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <AlertTriangle className={`w-5 h-5 ${overdue.length > 0 ? 'text-red-500' : 'text-amber-500'}`} />
+                <AlertTriangle className={`w-5 h-5 ${
+                  overdue.length > 0 ? 'text-red-500' : hasItems ? 'text-amber-500' : 'text-emerald-500'
+                }`} />
                 <div>
                   <p className="font-semibold text-gray-900 dark:text-gray-50 text-sm">
+                    {!hasItems && 'All caught up!'}
                     {overdue.length > 0 && `${overdue.length} overdue`}
                     {overdue.length > 0 && dueSoon.length > 0 && ' \u00b7 '}
                     {dueSoon.length > 0 && `${dueSoon.length} due soon`}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Tap to view all maintenance reminders
+                    {hasItems
+                      ? 'Tap to view all maintenance reminders'
+                      : 'No upcoming maintenance reminders. Log a service to set up reminders.'}
                   </p>
                 </div>
               </div>

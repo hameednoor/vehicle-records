@@ -588,6 +588,8 @@ async function initDb() {
       'ALTER TABLE service_records ADD COLUMN "originalCost" REAL',
       'ALTER TABLE service_records ADD COLUMN "originalCurrency" TEXT',
       'ALTER TABLE service_records ADD COLUMN "exchangeRate" REAL',
+      'ALTER TABLE categories ADD COLUMN "defaultKms" REAL',
+      'ALTER TABLE categories ADD COLUMN "defaultDays" INTEGER',
     ];
     for (const stmt of alterStatements) {
       try { await db.exec(stmt); } catch (e) { /* column already exists */ }
@@ -641,6 +643,8 @@ async function initDb() {
     'ALTER TABLE service_records ADD COLUMN "originalCost" REAL',
     'ALTER TABLE service_records ADD COLUMN "originalCurrency" TEXT',
     'ALTER TABLE service_records ADD COLUMN "exchangeRate" REAL',
+    'ALTER TABLE categories ADD COLUMN "defaultKms" REAL',
+    'ALTER TABLE categories ADD COLUMN "defaultDays" INTEGER',
   ];
   for (const stmt of alterStatements) {
     try { await db.exec(stmt); } catch (e) { /* column already exists */ }

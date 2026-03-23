@@ -54,15 +54,30 @@ async function seed() {
   const categoryCount = await db.get('SELECT COUNT(*) as count FROM categories');
   if (Number(categoryCount.count) === 0) {
     for (const name of DEFAULT_CATEGORIES) {
+      const interval = SERVICE_INTERVALS[name] || {};
       await db.run(
-        'INSERT INTO categories (id, name, "isDefault", "isArchived") VALUES (?, ?, 1, 0)',
+        'INSERT INTO categories (id, name, "isDefault", "isArchived", "defaultKms", "defaultDays") VALUES (?, ?, 1, 0, ?, ?)',
         uuidv4(),
-        name
+        name,
+        interval.kms || null,
+        interval.days || null
       );
     }
     console.log(`Seeded ${DEFAULT_CATEGORIES.length} default categories.`);
   } else {
-    console.log('Categories table already has data, skipping seed.');
+    // Backfill defaultKms/defaultDays on existing categories if missing
+    for (const name of DEFAULT_CATEGORIES) {
+      const interval = SERVICE_INTERVALS[name];
+      if (interval) {
+        await db.run(
+          'UPDATE categories SET "defaultKms" = COALESCE("defaultKms", ?), "defaultDays" = COALESCE("defaultDays", ?) WHERE LOWER(name) = LOWER(?)',
+          interval.kms,
+          interval.days,
+          name
+        );
+      }
+    }
+    console.log('Categories table already has data, backfilled default intervals.');
   }
 
   // Seed vehicles if empty

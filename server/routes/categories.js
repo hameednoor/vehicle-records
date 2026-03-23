@@ -46,7 +46,7 @@ router.post(
     try {
       const db = getDb();
       const id = uuidv4();
-      const { name } = req.body;
+      const { name, defaultKms, defaultDays } = req.body;
 
       // Check for duplicate name
       const existing = await db.get(
@@ -58,8 +58,8 @@ router.post(
       }
 
       await db.run(
-        'INSERT INTO categories (id, name, "isDefault", "isArchived") VALUES (?, ?, 0, 0)',
-        id, name
+        'INSERT INTO categories (id, name, "isDefault", "isArchived", "defaultKms", "defaultDays") VALUES (?, ?, 0, 0, ?, ?)',
+        id, name, defaultKms || null, defaultDays || null
       );
 
       const category = await db.get('SELECT * FROM categories WHERE id = ?', id);
@@ -91,7 +91,7 @@ router.put(
         return res.status(404).json({ error: 'Category not found.' });
       }
 
-      const { name } = req.body;
+      const { name, defaultKms, defaultDays } = req.body;
 
       // Check for duplicate name (excluding current category)
       const duplicate = await db.get(
@@ -102,7 +102,13 @@ router.put(
         return res.status(409).json({ error: 'A category with this name already exists.' });
       }
 
-      await db.run('UPDATE categories SET name = ? WHERE id = ?', name, req.params.id);
+      await db.run(
+        'UPDATE categories SET name = ?, "defaultKms" = ?, "defaultDays" = ? WHERE id = ?',
+        name,
+        defaultKms !== undefined ? (defaultKms || null) : category.defaultKms,
+        defaultDays !== undefined ? (defaultDays || null) : category.defaultDays,
+        req.params.id
+      );
 
       const updated = await db.get('SELECT * FROM categories WHERE id = ?', req.params.id);
       res.json(updated);

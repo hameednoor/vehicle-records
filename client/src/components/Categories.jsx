@@ -30,6 +30,8 @@ export default function Categories() {
   const [adding, setAdding] = useState(false);
   const [editId, setEditId] = useState(null);
   const [editName, setEditName] = useState('');
+  const [editKms, setEditKms] = useState('');
+  const [editDays, setEditDays] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -72,9 +74,15 @@ export default function Categories() {
   const handleUpdate = async (id) => {
     if (!editName.trim()) return;
     try {
-      await updateCategory(id, { name: editName.trim() });
+      await updateCategory(id, {
+        name: editName.trim(),
+        defaultKms: editKms ? Number(editKms) : null,
+        defaultDays: editDays ? Number(editDays) : null,
+      });
       setEditId(null);
       setEditName('');
+      setEditKms('');
+      setEditDays('');
       showSuccess('Category updated');
       fetchCategories();
     } catch (err) {
@@ -191,30 +199,55 @@ export default function Categories() {
                   className="card p-4 flex items-center gap-3 group"
                 >
                   {isEditing ? (
-                    <div className="flex-1 flex gap-2">
-                      <input
-                        type="text"
-                        className="input flex-1"
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleUpdate(catId);
-                          if (e.key === 'Escape') setEditId(null);
-                        }}
-                        autoFocus
-                      />
-                      <button
-                        onClick={() => handleUpdate(catId)}
-                        className="btn-primary text-sm"
-                      >
-                        <Save className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setEditId(null)}
-                        className="btn-ghost text-sm"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
+                    <div className="flex-1 space-y-2">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          className="input flex-1"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleUpdate(catId);
+                            if (e.key === 'Escape') setEditId(null);
+                          }}
+                          placeholder="Category name"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleUpdate(catId)}
+                          className="btn-primary text-sm"
+                        >
+                          <Save className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setEditId(null)}
+                          className="btn-ghost text-sm"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <input
+                            type="number"
+                            className="input text-xs"
+                            value={editKms}
+                            onChange={(e) => setEditKms(e.target.value)}
+                            placeholder="Default KMs interval"
+                            min="0"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <input
+                            type="number"
+                            className="input text-xs"
+                            value={editDays}
+                            onChange={(e) => setEditDays(e.target.value)}
+                            placeholder="Default days interval"
+                            min="0"
+                          />
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     <>
@@ -227,12 +260,20 @@ export default function Categories() {
                             <StatusBadge status="info" label="Default" />
                           )}
                         </div>
-                        {serviceCount > 0 && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            {serviceCount} service
-                            {serviceCount !== 1 ? 's' : ''}
-                          </p>
-                        )}
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                          {(cat.defaultKms || cat.defaultDays) && (
+                            <p className="text-xs text-brand-600 dark:text-brand-400">
+                              {cat.defaultKms ? `Every ${Number(cat.defaultKms).toLocaleString()} km` : ''}
+                              {cat.defaultKms && cat.defaultDays ? ' / ' : ''}
+                              {cat.defaultDays ? `${cat.defaultDays} days` : ''}
+                            </p>
+                          )}
+                          {serviceCount > 0 && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {serviceCount} service{serviceCount !== 1 ? 's' : ''}
+                            </p>
+                          )}
+                        </div>
                       </div>
 
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -240,6 +281,8 @@ export default function Categories() {
                           onClick={() => {
                             setEditId(catId);
                             setEditName(cat.name);
+                            setEditKms(cat.defaultKms || '');
+                            setEditDays(cat.defaultDays || '');
                           }}
                           className="btn-icon"
                           title="Edit"

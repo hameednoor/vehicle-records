@@ -230,18 +230,16 @@ router.post(
         return res.status(404).json({ error: 'Category not found.' });
       }
 
-      // Auto-populate from SERVICE_INTERVALS when user didn't provide values
+      // Auto-populate from category defaults when user didn't provide values
       let usedNextDueKms = nextDueKms || null;
       let usedNextDueDays = nextDueDays || null;
 
       if (!usedNextDueKms && !usedNextDueDays && category) {
-        const { SERVICE_INTERVALS } = require('../db/seed');
-        const interval = SERVICE_INTERVALS[category.name];
-        if (interval) {
-          if (kmsAtService) {
-            usedNextDueKms = Number(kmsAtService) + interval.kms;
-          }
-          usedNextDueDays = interval.days;
+        if (category.defaultKms && kmsAtService) {
+          usedNextDueKms = Number(kmsAtService) + Number(category.defaultKms);
+        }
+        if (category.defaultDays) {
+          usedNextDueDays = Number(category.defaultDays);
         }
       }
 
