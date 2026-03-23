@@ -133,10 +133,10 @@ router.post('/import', async (req, res) => {
       kmLogs: 0,
     };
 
-    // Import categories
+    // Import categories (skip existing records — never overwrite user data)
     if (data.categories && Array.isArray(data.categories)) {
-      const sql = db.upsertSql(
-        `INSERT OR REPLACE INTO categories (id, name, "isDefault", "isArchived", "defaultKms", "defaultDays", "createdAt")
+      const sql = db.insertIgnoreSql(
+        `INSERT OR IGNORE INTO categories (id, name, "isDefault", "isArchived", "defaultKms", "defaultDays", "createdAt")
          VALUES (?, ?, ?, ?, ?, ?, ?)`
       );
       for (const cat of data.categories) {
@@ -146,10 +146,10 @@ router.post('/import', async (req, res) => {
       }
     }
 
-    // Import vehicles
+    // Import vehicles (skip existing)
     if (data.vehicles && Array.isArray(data.vehicles)) {
-      const sql = db.upsertSql(
-        `INSERT OR REPLACE INTO vehicles
+      const sql = db.insertIgnoreSql(
+        `INSERT OR IGNORE INTO vehicles
          (id, name, make, model, year, type, plate, vin, "currentKms", photo, notes, "createdAt", "updatedAt")
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       );
@@ -163,10 +163,10 @@ router.post('/import', async (req, res) => {
       }
     }
 
-    // Import service records
+    // Import service records (skip existing)
     if (data.serviceRecords && Array.isArray(data.serviceRecords)) {
-      const sql = db.upsertSql(
-        `INSERT OR REPLACE INTO service_records
+      const sql = db.insertIgnoreSql(
+        `INSERT OR IGNORE INTO service_records
          (id, "vehicleId", "categoryId", date, "kmsAtService", cost, currency, provider, notes,
           "nextDueKms", "nextDueDays", "nextDueDate", "originalCost", "originalCurrency", "exchangeRate", "createdAt")
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -183,10 +183,10 @@ router.post('/import', async (req, res) => {
       }
     }
 
-    // Import invoices (metadata only, files must be copied separately)
+    // Import invoices (skip existing — metadata only, files must be copied separately)
     if (data.invoices && Array.isArray(data.invoices)) {
-      const sql = db.upsertSql(
-        `INSERT OR REPLACE INTO invoices
+      const sql = db.insertIgnoreSql(
+        `INSERT OR IGNORE INTO invoices
          (id, "serviceRecordId", "filePath", "originalName", "fileType", "ocrText", "ocrProcessed", "uploadedAt")
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       );
@@ -200,10 +200,10 @@ router.post('/import', async (req, res) => {
       }
     }
 
-    // Import reminder configs
+    // Import reminder configs (skip existing)
     if (data.reminderConfigs && Array.isArray(data.reminderConfigs)) {
-      const sql = db.upsertSql(
-        `INSERT OR REPLACE INTO reminder_configs
+      const sql = db.insertIgnoreSql(
+        `INSERT OR IGNORE INTO reminder_configs
          (id, "vehicleId", type, channel, frequency, recipients, "isActive", "createdAt")
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       );
@@ -217,10 +217,10 @@ router.post('/import', async (req, res) => {
       }
     }
 
-    // Import KM logs
+    // Import KM logs (skip existing)
     if (data.kmLogs && Array.isArray(data.kmLogs)) {
-      const sql = db.upsertSql(
-        `INSERT OR REPLACE INTO km_logs (id, "vehicleId", kms, "loggedAt")
+      const sql = db.insertIgnoreSql(
+        `INSERT OR IGNORE INTO km_logs (id, "vehicleId", kms, "loggedAt")
          VALUES (?, ?, ?, ?)`
       );
       for (const log of data.kmLogs) {
@@ -229,20 +229,20 @@ router.post('/import', async (req, res) => {
       }
     }
 
-    // Import settings
+    // Import settings (only if no settings exist yet)
     if (data.settings) {
-      const s = data.settings;
-      const now = new Date().toISOString();
-      const sql = db.upsertSql(
-        `INSERT OR REPLACE INTO settings
-         (id, currency, timezone, emails, "whatsappNumber", "reminderBufferKms", "reminderBufferDays", "createdAt", "updatedAt")
-         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`
-      );
-      await db.run(
-        sql,
-        s.currency, s.timezone, s.emails, s.whatsappNumber,
-        s.reminderBufferKms, s.reminderBufferDays, s.createdAt, now
-      );
+      const existing = await db.get('SELECT id FROM settings WHERE id = 1');
+      if (!existing) {
+        const s = data.settings;
+        const now = new Date().toISOString();
+        await db.run(
+          `INSERT INTO settings
+           (id, currency, timezone, emails, "whatsappNumber", "reminderBufferKms", "reminderBufferDays", "createdAt", "updatedAt")
+           VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          s.currency, s.timezone, s.emails, s.whatsappNumber,
+          s.reminderBufferKms, s.reminderBufferDays, s.createdAt, now
+        );
+      }
     }
 
     res.json({

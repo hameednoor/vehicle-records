@@ -103,6 +103,32 @@ function upsertSql(sql) {
 }
 
 /**
+ * Convert `INSERT OR IGNORE` (SQLite syntax) to
+ * `INSERT ... ON CONFLICT ... DO NOTHING` for PostgreSQL.
+ *
+ * Used by the import route to skip existing records without overwriting.
+ */
+function insertIgnoreSql(sql) {
+  if (!isPostgres) return sql;
+
+  let pgSql = sql.replace(/INSERT\s+OR\s+IGNORE\s+INTO/i, 'INSERT INTO');
+
+  const tableMatch = pgSql.match(/INSERT\s+INTO\s+(\w+)\s*\(/i);
+  if (!tableMatch) return pgSql;
+
+  const colStart = pgSql.indexOf('(') + 1;
+  const colEnd = pgSql.indexOf(')');
+  const columns = pgSql
+    .substring(colStart, colEnd)
+    .split(',')
+    .map((c) => c.trim());
+
+  const pk = columns[0];
+  pgSql += ` ON CONFLICT (${pk}) DO NOTHING`;
+  return pgSql;
+}
+
+/**
  * Return the function name for extracting 'YYYY-MM' from a date column.
  * SQLite:  strftime('%Y-%m', col)
  * PG:      to_char(col::date, 'YYYY-MM')
@@ -169,6 +195,7 @@ function createPgWrapper(pool) {
     nowExpr,
     monthExtract,
     upsertSql,
+    insertIgnoreSql,
     isPostgres: true,
   };
 }
@@ -247,6 +274,7 @@ function createSqliteWrapper(rawDb) {
     nowExpr,
     monthExtract,
     upsertSql,
+    insertIgnoreSql,
     isPostgres: false,
 
     // Expose for scheduler compatibility (it was receiving the raw db before)
@@ -656,4 +684,4 @@ async function initDb() {
   return db;
 }
 
-module.exports = { getDb, initDb, isPostgres, nowExpr, monthExtract, upsertSql };
+module.exports = { getDb, initDb, isPostgres, nowExpr, monthExtract, upsertSql, insertIgnoreSql };
