@@ -105,7 +105,7 @@ async function checkMaintenanceReminders(db) {
              OR
              (sr."nextDueKms" IS NOT NULL AND sr."nextDueKms" <= ?)
            )
-         ORDER BY sr."nextDueDate" ASC NULLS LAST`,
+         ORDER BY CASE WHEN sr."nextDueDate" IS NULL THEN 1 ELSE 0 END, sr."nextDueDate" ASC`,
         config.vehicleId, bufferDateStr, kmsThreshold
       );
 
@@ -204,6 +204,12 @@ async function checkKmLogReminders(db) {
       }
 
       if (shouldSend) {
+        const today = new Date().toISOString().split('T')[0];
+        const sentKey = `kmlog-${config.vehicleId}-${today}`;
+        if (sentToday.has(sentKey)) continue;
+
+        sentToday.add(sentKey);
+
         const vehicle = {
           name: config.vehicleName,
           currentKms: config.currentKms,
@@ -214,6 +220,7 @@ async function checkKmLogReminders(db) {
         const channel = config.channel || 'email';
         if (channel === 'email' || channel === 'both') {
           sendKmLogReminder(vehicle).catch((err) => {
+            sentToday.delete(sentKey);
             console.error(`Failed to send KM log reminder:`, err.message);
           });
         }

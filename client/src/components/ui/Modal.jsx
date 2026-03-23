@@ -47,11 +47,12 @@ export default function Modal({
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby={title ? 'modal-title' : undefined}>
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
         onClick={onClose}
+        aria-hidden="true"
       />
 
       {/* Modal content */}
@@ -69,7 +70,7 @@ export default function Modal({
           <div className="flex items-center justify-between px-6 py-4 border-b
                          border-gray-200 dark:border-gray-800 flex-shrink-0">
             {title && (
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-50">
+              <h2 id="modal-title" className="text-lg font-semibold text-gray-900 dark:text-gray-50">
                 {title}
               </h2>
             )}

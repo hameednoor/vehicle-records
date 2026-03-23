@@ -17,6 +17,25 @@ const path = require('path');
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 const isCloudStorage = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY);
 
+/**
+ * Extract the filename from a file path or a full URL.
+ * Handles cloud URLs like "https://xxx.supabase.co/storage/v1/object/public/invoices/abc.jpg?token=..."
+ * as well as local paths and simple filenames.
+ */
+function extractFilename(filePath) {
+  if (!filePath) return '';
+  try {
+    // If it looks like a URL, parse it properly to strip query params
+    if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+      const url = new URL(filePath);
+      return path.basename(url.pathname);
+    }
+  } catch (_) {
+    // Fall through to path.basename
+  }
+  return path.basename(filePath);
+}
+
 let supabase = null;
 
 function getSupabase() {
@@ -39,17 +58,25 @@ async function ensureBuckets() {
   const buckets = ['invoices', 'vehicle-photos'];
 
   for (const bucket of buckets) {
-    const { data, error } = await client.storage.getBucket(bucket);
-    if (error && error.message.includes('not found')) {
-      const { error: createErr } = await client.storage.createBucket(bucket, {
-        public: true,
-        fileSizeLimit: 10 * 1024 * 1024, // 10MB
-      });
-      if (createErr) {
-        console.error(`Failed to create bucket "${bucket}":`, createErr.message);
-      } else {
-        console.log(`Created storage bucket: ${bucket}`);
+    try {
+      const { data, error } = await client.storage.getBucket(bucket);
+      if (error) {
+        if (error.message && error.message.includes('not found')) {
+          const { error: createErr } = await client.storage.createBucket(bucket, {
+            public: true,
+            fileSizeLimit: 10 * 1024 * 1024, // 10MB
+          });
+          if (createErr) {
+            console.error(`Failed to create bucket "${bucket}":`, createErr.message);
+          } else {
+            console.log(`Created storage bucket: ${bucket}`);
+          }
+        } else {
+          console.error(`Error checking bucket "${bucket}":`, error.message);
+        }
       }
+    } catch (err) {
+      console.error(`Exception checking/creating bucket "${bucket}":`, err.message);
     }
   }
 }
@@ -82,9 +109,10 @@ async function uploadFile(bucket, filePath, buffer, mimetype) {
   }
 
   // Local storage
-  const destPath = path.join(UPLOADS_DIR, path.basename(filePath));
+  const filename = extractFilename(filePath);
+  const destPath = path.join(UPLOADS_DIR, filename);
   fs.writeFileSync(destPath, buffer);
-  return `/uploads/${path.basename(filePath)}`;
+  return `/uploads/${filename}`;
 }
 
 /**
@@ -94,17 +122,27 @@ async function uploadFile(bucket, filePath, buffer, mimetype) {
  * @param {string} filePath - The path/key within the bucket
  */
 async function deleteFile(bucket, filePath) {
+  if (!filePath) return;
+
   if (isCloudStorage) {
     const client = getSupabase();
-    const { error } = await client.storage.from(bucket).remove([filePath]);
+    // Ensure we pass just the filename/key, not a full URL
+    const key = extractFilename(filePath);
+    const { error } = await client.storage.from(bucket).remove([key]);
     if (error) {
       console.error(`Supabase delete failed: ${error.message}`);
     }
     return;
   }
 
-  // Local storage
-  const fullPath = path.join(UPLOADS_DIR, path.basename(filePath));
+  // Local storage - skip if filePath is a cloud URL (e.g. leftover from cloud config)
+  if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+    console.warn(`Skipping local delete for cloud URL: ${filePath}`);
+    return;
+  }
+
+  const filename = extractFilename(filePath);
+  const fullPath = path.join(UPLOADS_DIR, filename);
   if (fs.existsSync(fullPath)) {
     fs.unlinkSync(fullPath);
   }
@@ -124,7 +162,7 @@ async function getFileUrl(bucket, filePath) {
     return data.publicUrl;
   }
 
-  return `/uploads/${path.basename(filePath)}`;
+  return `/uploads/${extractFilename(filePath)}`;
 }
 
 module.exports = {
@@ -133,5 +171,6 @@ module.exports = {
   getFileUrl,
   isCloudStorage,
   ensureBuckets,
+  extractFilename,
   UPLOADS_DIR,
 };

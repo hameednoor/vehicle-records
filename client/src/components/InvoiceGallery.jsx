@@ -7,7 +7,7 @@ import {
   Calendar,
   Tag,
 } from 'lucide-react';
-import { getVehicleServiceRecords, searchInvoices } from '../api';
+import { getVehicleServiceRecords, getServiceInvoices, searchInvoices } from '../api';
 import InvoiceViewer from './InvoiceViewer';
 import { Skeleton } from './ui/LoadingSkeleton';
 import { showError } from './ui/Toast';
@@ -38,8 +38,26 @@ export default function InvoiceGallery({ vehicleId }) {
       const allInvoices = [];
       const catSet = new Map();
 
-      records.forEach((record) => {
-        const recordInvoices = record.invoices || [];
+      // Fetch actual invoice data for records that have invoices
+      const invoiceFetches = records
+        .filter((r) => (r.invoiceCount || 0) > 0)
+        .map(async (record) => {
+          const recordId = record._id || record.id;
+          try {
+            const invData = await getServiceInvoices(recordId);
+            const recordInvoices = Array.isArray(invData)
+              ? invData
+              : invData?.invoices || invData?.data || [];
+            return { record, invoices: recordInvoices };
+          } catch {
+            return { record, invoices: [] };
+          }
+        });
+
+      const fetchedResults = await Promise.all(invoiceFetches);
+
+      // Also process records without invoices for category tracking
+      for (const record of records) {
         const categoryName =
           typeof record.category === 'object'
             ? record.category?.name
@@ -52,17 +70,29 @@ export default function InvoiceGallery({ vehicleId }) {
         if (!catSet.has(categoryId)) {
           catSet.set(categoryId, categoryName);
         }
+      }
+
+      for (const { record, invoices: recordInvoices } of fetchedResults) {
+        const categoryName =
+          typeof record.category === 'object'
+            ? record.category?.name
+            : record.categoryName || 'Uncategorized';
+        const categoryId =
+          typeof record.category === 'object'
+            ? record.category?._id || record.category?.id
+            : record.categoryId || record.category_id || 'uncategorized';
 
         recordInvoices.forEach((inv) => {
           allInvoices.push({
             ...inv,
+            url: inv.filePath,
             serviceDate: record.date || record.serviceDate,
             categoryName,
             categoryId,
             serviceId: record._id || record.id,
           });
         });
-      });
+      }
 
       setInvoices(allInvoices);
       setCategories(
@@ -86,10 +116,12 @@ export default function InvoiceGallery({ vehicleId }) {
         q: searchQuery,
         vehicleId,
       });
+      const resultList = Array.isArray(results)
+        ? results
+        : results?.invoices || results?.data || [];
+      // Map filePath to url for consistent display
       setSearchResults(
-        Array.isArray(results)
-          ? results
-          : results?.invoices || results?.data || []
+        resultList.map((inv) => ({ ...inv, url: inv.url || inv.filePath }))
       );
     } catch {
       showError('Search failed');
@@ -108,6 +140,11 @@ export default function InvoiceGallery({ vehicleId }) {
     setInvoices((prev) =>
       prev.filter((inv) => (inv._id || inv.id) !== invoiceId)
     );
+    if (searchResults) {
+      setSearchResults((prev) =>
+        prev.filter((inv) => (inv._id || inv.id) !== invoiceId)
+      );
+    }
     setSelectedIndex(null);
   };
 
@@ -201,10 +238,11 @@ export default function InvoiceGallery({ vehicleId }) {
       {/* Gallery grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
         {displayInvoices.map((invoice, index) => {
-          const url = invoice.thumbnailUrl || invoice.url || invoice.fileUrl;
-          const isImage = (invoice.mimeType || invoice.type || '')
-            .toLowerCase()
-            .startsWith('image');
+          const url = invoice.url || invoice.filePath || invoice.fileUrl || invoice.thumbnailUrl;
+          const fileType = invoice.fileType || invoice.type || '';
+          const isImage =
+            (invoice.mimeType || '').toLowerCase().startsWith('image') ||
+            /^\.(jpg|jpeg|png|webp|gif|heic)$/i.test(fileType);
 
           return (
             <div
@@ -213,42 +251,39 @@ export default function InvoiceGallery({ vehicleId }) {
               className="card-hover overflow-hidden cursor-pointer group"
             >
               <div className="aspect-square bg-gray-50 dark:bg-gray-800 flex items-center justify-center overflow-hidden">
-                {url && isImage ? (
-                  <img
-                    src={url}
-                    alt="Invoice"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    loading="lazy"
-                  />
-                ) : url ? (
+                {url ? (
                   <img
                     src={url}
                     alt="Invoice"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     loading="lazy"
                     onError={(e) => {
-                      e.target.style.display = 'none';
-                      e.target.nextSibling?.classList.remove('hidden');
+                      e.target.replaceWith(
+                        Object.assign(document.createElement('div'), {
+                          className: 'w-full h-full flex items-center justify-center',
+                          innerHTML: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>',
+                        })
+                      );
                     }}
                   />
                 ) : (
                   <FileText className="w-10 h-10 text-gray-400" />
                 )}
-                {url && !isImage && (
-                  <FileText className="w-10 h-10 text-gray-400 hidden" />
-                )}
               </div>
               <div className="p-2 space-y-0.5">
                 <p className="text-xs text-gray-600 dark:text-gray-400 flex items-center gap-1">
                   <Calendar className="w-3 h-3" />
-                  {invoice.serviceDate
-                    ? format(new Date(invoice.serviceDate), 'MMM d, yyyy')
-                    : 'N/A'}
+                  {(() => { try { return invoice.serviceDate ? format(new Date(invoice.serviceDate), 'MMM d, yyyy') : 'N/A'; } catch { return 'N/A'; } })()}
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-500 flex items-center gap-1 text-truncate">
                   <Tag className="w-3 h-3 flex-shrink-0" />
                   {invoice.categoryName || 'N/A'}
                 </p>
+                {(invoice.ocrCost || invoice.ocrCurrency) && (
+                  <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    {invoice.ocrCurrency || ''} {invoice.ocrCost ? Number(invoice.ocrCost).toLocaleString() : ''}
+                  </p>
+                )}
               </div>
             </div>
           );

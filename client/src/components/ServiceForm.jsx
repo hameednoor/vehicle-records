@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Save, X, Plus, Loader2, ScanLine } from 'lucide-react';
 import {
@@ -39,6 +39,7 @@ export default function ServiceForm() {
   const [loadingRate, setLoadingRate] = useState(false);
   const [analyzingInvoice, setAnalyzingInvoice] = useState(false);
   const [invoiceDetected, setInvoiceDetected] = useState(null);
+  const analysisCostRef = useRef(0); // tracks cumulative OCR-detected cost across all files
 
   const currencies = [
     { code: 'AED', name: 'AED - UAE Dirham' },
@@ -200,6 +201,11 @@ export default function ServiceForm() {
       return;
     }
 
+    if (loadingRate) {
+      showError('Please wait for exchange rate to load');
+      return;
+    }
+
     setSaving(true);
     try {
       const payload = {
@@ -245,6 +251,30 @@ export default function ServiceForm() {
       setSaving(false);
     }
   };
+
+  if (loadingData) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
+        <div className="flex items-center gap-4">
+          <button onClick={() => navigate(-1)} className="btn-icon">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div>
+            <h1 className="page-title">{isEditing ? 'Edit Service' : 'Log Service'}</h1>
+            <p className="page-subtitle">Loading form data...</p>
+          </div>
+        </div>
+        <div className="card p-6 space-y-6">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="space-y-2">
+              <div className="skeleton h-4 w-24 rounded" />
+              <div className="skeleton h-10 w-full rounded" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
@@ -428,42 +458,73 @@ export default function ServiceForm() {
           <DropZone
             onFilesSelected={(files) => {
               setInvoiceFiles((prev) => [...prev, ...files]);
-              const imageFile = files.find((f) =>
+              const imageFiles = files.filter((f) =>
                 f.type?.startsWith('image/') ||
                 /\.(jpg|jpeg|png|webp|heic)$/i.test(f.name)
               );
-              if (imageFile && !form.cost) {
-                setAnalyzingInvoice(true);
-                setInvoiceDetected(null);
-                analyzeInvoice(imageFile)
-                  .then((result) => {
-                    if (result.cost || result.currency) {
-                      setInvoiceDetected(result);
-                      if (result.cost && !form.cost) {
-                        handleChange('cost', String(result.cost));
-                      }
-                      if (result.currency) {
-                        const validCode = currencies.find(
-                          (c) => c.code === result.currency
-                        );
-                        if (validCode) setCurrency(result.currency);
-                      }
-                      const parts = [];
-                      if (result.currency) parts.push(result.currency);
-                      if (result.cost) parts.push(result.cost.toLocaleString());
-                      if (parts.length > 0) {
-                        showSuccess(`Detected from invoice: ${parts.join(' ')}`);
-                      }
+              if (imageFiles.length === 0) return;
+
+              setAnalyzingInvoice(true);
+              setInvoiceDetected(null);
+
+              const analyzeAll = imageFiles.map((file) =>
+                analyzeInvoice(file).catch(() => null)
+              );
+
+              Promise.all(analyzeAll)
+                .then((results) => {
+                  let batchCost = 0;
+                  let detectedCurrency = null;
+
+                  for (const result of results) {
+                    if (!result) continue;
+                    if (result.cost) batchCost += result.cost;
+                    if (result.currency && !detectedCurrency) {
+                      const validCode = currencies.find(
+                        (c) => c.code === result.currency
+                      );
+                      if (validCode) detectedCurrency = result.currency;
                     }
-                  })
-                  .catch(() => {})
-                  .finally(() => setAnalyzingInvoice(false));
-              }
+                  }
+
+                  if (batchCost > 0 || detectedCurrency) {
+                    // Sum with any previously detected costs
+                    const newTotal = analysisCostRef.current + batchCost;
+                    analysisCostRef.current = newTotal;
+
+                    setInvoiceDetected({
+                      cost: newTotal,
+                      currency: detectedCurrency,
+                    });
+
+                    if (newTotal > 0) {
+                      handleChange('cost', String(newTotal));
+                    }
+                    if (detectedCurrency) {
+                      setCurrency(detectedCurrency);
+                    }
+
+                    const parts = [];
+                    if (detectedCurrency) parts.push(detectedCurrency);
+                    if (newTotal) parts.push(newTotal.toLocaleString());
+                    if (parts.length > 0) {
+                      showSuccess(`Detected from invoice${imageFiles.length > 1 ? 's' : ''}: ${parts.join(' ')}`);
+                    }
+                  }
+                })
+                .finally(() => setAnalyzingInvoice(false));
             }}
             files={invoiceFiles}
-            onRemove={(index) =>
-              setInvoiceFiles((prev) => prev.filter((_, i) => i !== index))
-            }
+            onRemove={(index) => {
+              setInvoiceFiles((prev) => {
+                const next = prev.filter((_, i) => i !== index);
+                if (next.length === 0) {
+                  analysisCostRef.current = 0;
+                  setInvoiceDetected(null);
+                }
+                return next;
+              });
+            }}
             maxFiles={10}
             label="Upload invoices or receipts"
           />
@@ -537,9 +598,9 @@ export default function ServiceForm() {
             <X className="w-4 h-4" />
             Cancel
           </button>
-          <button type="submit" className="btn-primary" disabled={saving}>
+          <button type="submit" className="btn-primary" disabled={saving || analyzingInvoice || loadingRate}>
             <Save className="w-4 h-4" />
-            {saving ? 'Saving...' : isEditing ? 'Update Record' : 'Save Service Record'}
+            {saving ? 'Saving...' : analyzingInvoice ? 'Analyzing...' : loadingRate ? 'Loading rate...' : isEditing ? 'Update Record' : 'Save Service Record'}
           </button>
         </div>
       </form>

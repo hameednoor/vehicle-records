@@ -304,6 +304,7 @@ router.post(
         id
       );
 
+      console.log(`Service record created: ${id} for vehicle ${vehicleId}`);
       res.status(201).json(record);
     } catch (error) {
       console.error('Error creating service record:', error.message);

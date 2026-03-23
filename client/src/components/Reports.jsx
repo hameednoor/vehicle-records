@@ -71,6 +71,21 @@ function getDateRange(range) {
   }
 }
 
+function CustomTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200
+                   dark:border-gray-800 shadow-lg p-3 text-sm">
+      <p className="font-medium text-gray-900 dark:text-gray-50">{label}</p>
+      {payload.map((entry, i) => (
+        <p key={i} style={{ color: entry.color }} className="mt-1">
+          {entry.name}: AED {Number(entry.value).toLocaleString()}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export default function Reports() {
   const [vehicles, setVehicles] = useState([]);
   const [costByVehicle, setCostByVehicle] = useState([]);
@@ -186,21 +201,6 @@ export default function Reports() {
     );
     return Math.round(total / monthlyTrends.length);
   }, [monthlyTrends]);
-
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (!active || !payload?.length) return null;
-    return (
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200
-                     dark:border-gray-800 shadow-lg p-3 text-sm">
-        <p className="font-medium text-gray-900 dark:text-gray-50">{label}</p>
-        {payload.map((entry, i) => (
-          <p key={i} style={{ color: entry.color }} className="mt-1">
-            {entry.name}: AED {Number(entry.value).toLocaleString()}
-          </p>
-        ))}
-      </div>
-    );
-  };
 
   return (
     <div className="space-y-6 animate-fade-in">

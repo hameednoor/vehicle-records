@@ -261,11 +261,11 @@ export default function Categories() {
                           )}
                         </div>
                         <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
-                          {(cat.defaultKms || cat.defaultDays) && (
+                          {(Number(cat.defaultKms) > 0 || Number(cat.defaultDays) > 0) && (
                             <p className="text-xs text-brand-600 dark:text-brand-400">
-                              {cat.defaultKms ? `Every ${Number(cat.defaultKms).toLocaleString()} km` : ''}
-                              {cat.defaultKms && cat.defaultDays ? ' / ' : ''}
-                              {cat.defaultDays ? `${cat.defaultDays} days` : ''}
+                              {Number(cat.defaultKms) > 0 ? `Every ${Number(cat.defaultKms).toLocaleString()} km` : ''}
+                              {Number(cat.defaultKms) > 0 && Number(cat.defaultDays) > 0 ? ' / ' : ''}
+                              {Number(cat.defaultDays) > 0 ? `${cat.defaultDays} days` : ''}
                             </p>
                           )}
                           {serviceCount > 0 && (

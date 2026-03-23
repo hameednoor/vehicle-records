@@ -95,12 +95,14 @@ function VehiclePickerModal({ open, onClose, onSelect, title }) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+         role="dialog" aria-modal="true" aria-labelledby="vehicle-picker-title"
+         onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose} aria-hidden="true" />
       <div className="relative w-full max-w-sm bg-white dark:bg-gray-900 rounded-2xl shadow-2xl
                       animate-scale-in border border-gray-200 dark:border-gray-800 max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-800">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-50">{title}</h2>
+          <h2 id="vehicle-picker-title" className="text-lg font-semibold text-gray-900 dark:text-gray-50">{title}</h2>
           <button onClick={onClose} className="btn-icon -mr-2"><X className="w-5 h-5" /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-3">
@@ -220,10 +222,6 @@ export default function Layout({ children }) {
       setKmVehicle(vehicle);
     }
   };
-
-  useEffect(() => {
-    setSidebarOpen(false);
-  }, []);
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-950">

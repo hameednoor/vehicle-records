@@ -22,14 +22,33 @@ function getClient() {
  * @returns {Promise<Object|null>} Twilio message object or null on failure
  */
 async function sendWhatsApp(phone, message) {
+  if (!phone) {
+    console.warn('WhatsApp not sent: No phone number provided.');
+    return null;
+  }
+
   const twilioClient = getClient();
   if (!twilioClient) {
     console.warn('WhatsApp not sent: Twilio credentials not configured.');
     return null;
   }
 
-  // Ensure phone is in whatsapp: format
-  const to = phone.startsWith('whatsapp:') ? phone : `whatsapp:${phone}`;
+  // Ensure phone is in whatsapp:+... format
+  let normalizedPhone = phone.trim();
+  if (normalizedPhone.startsWith('whatsapp:')) {
+    // Already has prefix; ensure the number part starts with '+'
+    const numberPart = normalizedPhone.substring('whatsapp:'.length);
+    if (!numberPart.startsWith('+')) {
+      normalizedPhone = `whatsapp:+${numberPart}`;
+    }
+  } else {
+    // Add '+' if missing, then wrap with 'whatsapp:'
+    if (!normalizedPhone.startsWith('+')) {
+      normalizedPhone = `+${normalizedPhone}`;
+    }
+    normalizedPhone = `whatsapp:${normalizedPhone}`;
+  }
+  const to = normalizedPhone;
 
   try {
     const result = await twilioClient.messages.create({

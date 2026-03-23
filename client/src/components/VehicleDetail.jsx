@@ -54,6 +54,14 @@ export default function VehicleDetail() {
   const [deleting, setDeleting] = useState(false);
   const [kmModal, setKmModal] = useState(false);
 
+  const goBack = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/');
+    }
+  };
+
   useEffect(() => {
     fetchVehicle();
   }, [id]);
@@ -107,7 +115,7 @@ export default function VehicleDetail() {
   if (loading) {
     return (
       <div className="space-y-4">
-        <button onClick={() => navigate(-1)} className="btn-ghost">
+        <button onClick={goBack} className="btn-ghost">
           <ArrowLeft className="w-4 h-4" />
           Back
         </button>
@@ -139,7 +147,7 @@ export default function VehicleDetail() {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Back button */}
-      <button onClick={() => navigate(-1)} className="btn-ghost">
+      <button onClick={goBack} className="btn-ghost">
         <ArrowLeft className="w-4 h-4" />
         Back
       </button>

@@ -303,13 +303,15 @@ export default function Dashboard() {
 
       {/* Reminders Modal */}
       {showReminders && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+             role="dialog" aria-modal="true" aria-labelledby="reminders-modal-title"
+             onKeyDown={(e) => { if (e.key === 'Escape') setShowReminders(false); }}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
-               onClick={() => setShowReminders(false)} />
+               onClick={() => setShowReminders(false)} aria-hidden="true" />
           <div className="relative w-full max-w-2xl bg-white dark:bg-gray-900 rounded-2xl shadow-2xl
                           animate-scale-in border border-gray-200 dark:border-gray-800 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-50">
+              <h2 id="reminders-modal-title" className="text-lg font-semibold text-gray-900 dark:text-gray-50">
                 All Maintenance Reminders
               </h2>
               <button onClick={() => setShowReminders(false)} className="btn-icon -mr-2">
@@ -333,6 +335,13 @@ export default function Dashboard() {
                       onClick={() => {
                         setShowReminders(false);
                         navigate(`/vehicles/${item.vehicleId || item.vehicle_id}`);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setShowReminders(false);
+                          navigate(`/vehicles/${item.vehicleId || item.vehicle_id}`);
+                        }
                       }}
                       role="button"
                       tabIndex={0}

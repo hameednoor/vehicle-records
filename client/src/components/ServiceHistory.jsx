@@ -19,6 +19,7 @@ import {
   getVehicleServiceRecords,
   getCategories,
   deleteServiceRecord,
+  getServiceInvoices,
 } from '../api';
 import Modal from './ui/Modal';
 import { Skeleton } from './ui/LoadingSkeleton';
@@ -31,6 +32,7 @@ export default function ServiceHistory({ vehicleId }) {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
+  const [expandedInvoices, setExpandedInvoices] = useState({});
   const [filterCategory, setFilterCategory] = useState('all');
   const [sortBy, setSortBy] = useState('date-desc');
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -105,6 +107,24 @@ export default function ServiceHistory({ vehicleId }) {
     });
     return list;
   }, [records, filterCategory, sortBy, categories]);
+
+  const handleExpand = async (recordId) => {
+    if (expandedId === recordId) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(recordId);
+    // Fetch invoices for this record if not already cached
+    if (!expandedInvoices[recordId]) {
+      try {
+        const data = await getServiceInvoices(recordId);
+        const list = Array.isArray(data) ? data : data?.invoices || data?.data || [];
+        setExpandedInvoices((prev) => ({ ...prev, [recordId]: list }));
+      } catch {
+        setExpandedInvoices((prev) => ({ ...prev, [recordId]: [] }));
+      }
+    }
+  };
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -206,7 +226,8 @@ export default function ServiceHistory({ vehicleId }) {
             const id = record._id || record.id;
             const isExpanded = expandedId === id;
             const date = record.date || record.serviceDate;
-            const invoices = record.invoices || [];
+            const invoiceCount = record.invoiceCount || record.invoice_count || (record.invoices || []).length;
+            const invoices = expandedInvoices[id] || record.invoices || [];
 
             return (
               <div key={id} className="relative sm:pl-12">
@@ -217,7 +238,7 @@ export default function ServiceHistory({ vehicleId }) {
                 <div className="card overflow-hidden">
                   {/* Summary row */}
                   <button
-                    onClick={() => setExpandedId(isExpanded ? null : id)}
+                    onClick={() => handleExpand(id)}
                     className="w-full flex items-center gap-3 p-4 text-left hover:bg-gray-50
                                dark:hover:bg-gray-800/50 transition-colors"
                   >
@@ -274,32 +295,49 @@ export default function ServiceHistory({ vehicleId }) {
                       )}
 
                       {/* Invoice thumbnails */}
-                      {invoices.length > 0 && (
+                      {(invoices.length > 0 || invoiceCount > 0) && (
                         <div>
                           <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
-                            Invoices ({invoices.length})
+                            Invoices ({invoices.length || invoiceCount})
                           </p>
                           <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-                            {invoices.map((inv, i) => (
-                              <div
-                                key={inv._id || inv.id || i}
-                                className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100
-                                         dark:bg-gray-800 flex-shrink-0 border border-gray-200
-                                         dark:border-gray-700"
-                              >
-                                {inv.thumbnailUrl || inv.url ? (
-                                  <img
-                                    src={inv.thumbnailUrl || inv.url}
-                                    alt="Invoice"
-                                    className="w-full h-full object-cover"
-                                  />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center">
-                                    <FileText className="w-6 h-6 text-gray-400" />
+                            {invoices.length === 0 && invoiceCount > 0 ? (
+                              Array.from({ length: Math.min(invoiceCount, 4) }).map((_, i) => (
+                                <div
+                                  key={i}
+                                  className="w-16 h-16 rounded-lg bg-gray-100 dark:bg-gray-800
+                                           flex-shrink-0 border border-gray-200 dark:border-gray-700
+                                           skeleton"
+                                />
+                              ))
+                            ) : (
+                              invoices.map((inv, i) => {
+                                const invUrl = inv.thumbnailUrl || inv.url || inv.filePath;
+                                return (
+                                  <div
+                                    key={inv._id || inv.id || i}
+                                    className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100
+                                             dark:bg-gray-800 flex-shrink-0 border border-gray-200
+                                             dark:border-gray-700"
+                                  >
+                                    {invUrl ? (
+                                      <img
+                                        src={invUrl}
+                                        alt="Invoice"
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => {
+                                          e.target.style.display = 'none';
+                                        }}
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center">
+                                        <FileText className="w-6 h-6 text-gray-400" />
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            ))}
+                                );
+                              })
+                            )}
                           </div>
                         </div>
                       )}

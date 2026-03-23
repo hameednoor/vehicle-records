@@ -32,7 +32,7 @@ router.get('/cost-by-vehicle', async (req, res) => {
               MIN(sr.date) as "firstService",
               MAX(sr.date) as "lastService"
        FROM vehicles v
-       LEFT JOIN service_records sr ON sr."vehicleId" = v.id ${dateFilter ? 'AND 1=1' + dateFilter : ''}
+       LEFT JOIN service_records sr ON sr."vehicleId" = v.id${dateFilter}
        GROUP BY v.id, v.name, v.type
        ORDER BY "totalCost" DESC`,
       ...params
@@ -84,7 +84,7 @@ router.get('/cost-by-category', async (req, res) => {
               COUNT(sr.id) as "serviceCount",
               COALESCE(AVG(sr.cost), 0) as "averageCost"
        FROM categories c
-       LEFT JOIN service_records sr ON sr."categoryId" = c.id ${dateFilter ? 'AND 1=1' + dateFilter : ''}
+       LEFT JOIN service_records sr ON sr."categoryId" = c.id${dateFilter}
        WHERE c."isArchived" = 0
        GROUP BY c.id, c.name
        HAVING COUNT(sr.id) > 0
@@ -279,7 +279,7 @@ router.get('/export/pdf', async (req, res) => {
               COALESCE(SUM(sr.cost), 0) as "totalCost",
               COUNT(sr.id) as "serviceCount"
        FROM vehicles v
-       LEFT JOIN service_records sr ON sr."vehicleId" = v.id ${whereClause.replace('WHERE 1=1', 'AND 1=1')}
+       LEFT JOIN service_records sr ON sr."vehicleId" = v.id ${whereClause.replace('WHERE 1=1', '')}
        GROUP BY v.id, v.name
        HAVING COUNT(sr.id) > 0
        ORDER BY "totalCost" DESC`,

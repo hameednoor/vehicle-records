@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, X, FileText, Image as ImageIcon } from 'lucide-react';
 
@@ -35,12 +35,28 @@ export default function DropZone({
     return FileText;
   };
 
-  const getPreviewUrl = (file) => {
-    if (file.type?.startsWith('image/')) {
-      return URL.createObjectURL(file);
-    }
-    return null;
-  };
+  // Memoize preview URLs so they are stable across re-renders and properly
+  // revoked when files change or the component unmounts
+  const previewUrls = useMemo(
+    () =>
+      files.map((file) =>
+        file.type?.startsWith('image/') ? URL.createObjectURL(file) : null
+      ),
+    [files]
+  );
+
+  const prevUrlsRef = useRef([]);
+  useEffect(() => {
+    // Revoke previous batch of URLs that are no longer used
+    const prev = prevUrlsRef.current;
+    prev.forEach((url) => { if (url) URL.revokeObjectURL(url); });
+    prevUrlsRef.current = previewUrls;
+
+    return () => {
+      // Revoke all on unmount
+      previewUrls.forEach((url) => { if (url) URL.revokeObjectURL(url); });
+    };
+  }, [previewUrls]);
 
   return (
     <div className="space-y-3">
@@ -91,7 +107,7 @@ export default function DropZone({
       {files.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           {files.map((file, index) => {
-            const previewUrl = getPreviewUrl(file);
+            const previewUrl = previewUrls[index];
             const FileIcon = getFileIcon(file);
 
             return (
@@ -106,7 +122,6 @@ export default function DropZone({
                       src={previewUrl}
                       alt={file.name}
                       className="w-full h-full object-cover"
-                      onLoad={() => URL.revokeObjectURL(previewUrl)}
                     />
                   ) : (
                     <FileIcon className="w-10 h-10 text-gray-400" />

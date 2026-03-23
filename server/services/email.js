@@ -4,6 +4,22 @@ const BRAND_COLOR = '#1B4F72';
 const BRAND_LIGHT = '#2E86C1';
 const BRAND_BG = '#EBF5FB';
 
+// Cached transporter instance (reset when env vars change is not expected at runtime)
+let cachedTransporter = undefined; // undefined = not yet created, null = no credentials
+
+/**
+ * Escape HTML special characters to prevent XSS in email templates.
+ */
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 /**
  * Create a Nodemailer transporter using SMTP settings from environment
  * variables or provided configuration.
@@ -31,16 +47,28 @@ function createTransporter(config = {}) {
 }
 
 /**
+ * Get or create a cached transporter instance.
+ * Returns null if SMTP credentials are not configured.
+ */
+function getTransporter() {
+  if (cachedTransporter === undefined) {
+    cachedTransporter = createTransporter();
+  }
+  return cachedTransporter;
+}
+
+/**
  * Wrap content in the standard email layout template.
  */
 function wrapInTemplate(title, bodyHtml) {
+  const safeTitle = escapeHtml(title);
   return `
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
+  <title>${safeTitle}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#f4f4f4;font-family:Arial,Helvetica,sans-serif;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#f4f4f4;padding:20px 0;">
@@ -58,7 +86,7 @@ function wrapInTemplate(title, bodyHtml) {
           <!-- Title Bar -->
           <tr>
             <td style="background-color:${BRAND_LIGHT};padding:12px 32px;">
-              <h2 style="margin:0;color:#ffffff;font-size:16px;font-weight:600;">${title}</h2>
+              <h2 style="margin:0;color:#ffffff;font-size:16px;font-weight:600;">${safeTitle}</h2>
             </td>
           </tr>
           <!-- Body -->
@@ -95,7 +123,7 @@ function wrapInTemplate(title, bodyHtml) {
  */
 async function sendEmail({ to, subject, html }) {
   try {
-    const transporter = createTransporter();
+    const transporter = getTransporter();
     if (!transporter) {
       console.warn(`Email not sent (no SMTP config): "${subject}" to ${to}`);
       return null;
@@ -141,15 +169,19 @@ async function sendMaintenanceReminder(vehicle, serviceRecord, category) {
     );
   }
 
+  const safeCategoryName = escapeHtml(category.name);
+  const safeVehicleName = escapeHtml(vehicle.name);
+  const safeProvider = escapeHtml(serviceRecord.provider);
+
   const bodyHtml = `
     <div style="background-color:${statusColor};color:#fff;padding:8px 16px;border-radius:4px;display:inline-block;margin-bottom:16px;">
       ${statusLabel}
     </div>
-    <h3 style="color:${BRAND_COLOR};margin:0 0 8px;">${category.name}</h3>
+    <h3 style="color:${BRAND_COLOR};margin:0 0 8px;">${safeCategoryName}</h3>
     <table role="presentation" cellspacing="0" cellpadding="4" style="margin-bottom:16px;">
       <tr>
         <td style="color:#5D6D7E;padding-right:12px;">Vehicle:</td>
-        <td><strong>${vehicle.name}</strong></td>
+        <td><strong>${safeVehicleName}</strong></td>
       </tr>
       <tr>
         <td style="color:#5D6D7E;padding-right:12px;">Current KMs:</td>
@@ -165,12 +197,12 @@ async function sendMaintenanceReminder(vehicle, serviceRecord, category) {
         .join('')}
       <tr>
         <td style="color:#5D6D7E;padding-right:12px;">Last Service:</td>
-        <td>${serviceRecord.date || 'N/A'}</td>
+        <td>${escapeHtml(serviceRecord.date) || 'N/A'}</td>
       </tr>
     </table>
     ${
       serviceRecord.provider
-        ? `<p style="color:#5D6D7E;font-size:14px;">Last provider: ${serviceRecord.provider}</p>`
+        ? `<p style="color:#5D6D7E;font-size:14px;">Last provider: ${safeProvider}</p>`
         : ''
     }
     <p style="color:#5D6D7E;font-size:14px;margin-top:16px;">
@@ -191,13 +223,15 @@ async function sendMaintenanceReminder(vehicle, serviceRecord, category) {
  * @returns {Promise<Object|null>}
  */
 async function sendKmLogReminder(vehicle) {
+  const safeVehicleName = escapeHtml(vehicle.name);
+
   const bodyHtml = `
     <h3 style="color:${BRAND_COLOR};margin:0 0 16px;">Odometer Update Needed</h3>
     <p style="color:#333;font-size:15px;">
       It's time to log the current odometer reading for your vehicle:
     </p>
     <div style="background-color:${BRAND_BG};padding:16px;border-radius:6px;border-left:4px solid ${BRAND_COLOR};margin:16px 0;">
-      <p style="margin:0;font-size:16px;"><strong>${vehicle.name}</strong></p>
+      <p style="margin:0;font-size:16px;"><strong>${safeVehicleName}</strong></p>
       <p style="margin:4px 0 0;color:#5D6D7E;font-size:14px;">
         Last recorded: ${Number(vehicle.currentKms || 0).toLocaleString()} km
       </p>

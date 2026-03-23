@@ -90,18 +90,18 @@ function mountRoutes() {
     });
   }
 
-  // Global error handler
+  // 404 handler for unmatched routes
+  app.use((req, res) => {
+    res.status(404).json({ error: `Route not found: ${req.method} ${req.originalUrl}` });
+  });
+
+  // Global error handler (must be after 404 handler so it can catch errors from above)
   app.use((err, req, res, next) => {
     console.error('Unhandled error:', err);
     res.status(500).json({
       error: 'Internal server error.',
       ...(process.env.NODE_ENV === 'development' && { details: err.message }),
     });
-  });
-
-  // 404 handler for unmatched routes
-  app.use((req, res) => {
-    res.status(404).json({ error: `Route not found: ${req.method} ${req.originalUrl}` });
   });
 }
 

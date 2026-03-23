@@ -24,12 +24,13 @@ export function ThemeProvider({ children }) {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  // Listen for system theme changes
+  // Listen for system theme changes — only follow system preference
+  // when the user has NOT manually toggled the theme
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = (e) => {
-      const stored = localStorage.getItem('theme');
-      if (!stored) {
+      const userExplicit = localStorage.getItem('theme-explicit');
+      if (!userExplicit) {
         setTheme(e.matches ? 'dark' : 'light');
       }
     };
@@ -38,6 +39,7 @@ export function ThemeProvider({ children }) {
   }, []);
 
   const toggleTheme = useCallback(() => {
+    localStorage.setItem('theme-explicit', '1');
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   }, []);
 

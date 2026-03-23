@@ -68,7 +68,7 @@ export default function InvoiceViewer({
       window.URL.revokeObjectURL(url);
     } catch {
       // Fallback: open in new tab
-      const imageUrl = invoice.url || invoice.fileUrl || invoice.thumbnailUrl;
+      const imageUrl = invoice.url || invoice.filePath || invoice.fileUrl || invoice.thumbnailUrl;
       if (imageUrl) {
         window.open(imageUrl, '_blank');
       } else {
@@ -95,8 +95,10 @@ export default function InvoiceViewer({
     }
   };
 
-  const imageUrl = invoice.url || invoice.fileUrl || invoice.thumbnailUrl;
+  const imageUrl = invoice.url || invoice.filePath || invoice.fileUrl || invoice.thumbnailUrl;
   const ocrText = invoice.ocrText || invoice.ocr_text || '';
+  const ocrCost = invoice.ocrCost || invoice.ocr_cost;
+  const ocrCurrency = invoice.ocrCurrency || invoice.ocr_currency;
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/90 flex animate-fade-in">
@@ -233,6 +235,15 @@ export default function InvoiceViewer({
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
+              {/* Detected cost/currency */}
+              {(ocrCost || ocrCurrency) && (
+                <div className="mb-4 p-3 bg-gray-800 rounded-lg border border-gray-700">
+                  <p className="text-xs font-medium text-gray-400 mb-1">Detected from Invoice</p>
+                  <p className="text-lg font-semibold text-emerald-400">
+                    {ocrCurrency || ''} {ocrCost ? Number(ocrCost).toLocaleString() : '--'}
+                  </p>
+                </div>
+              )}
               {ocrText ? (
                 <p className="text-sm text-gray-300 whitespace-pre-wrap font-mono leading-relaxed">
                   {ocrText}

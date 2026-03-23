@@ -25,6 +25,14 @@ export default function VehicleForm() {
   const navigate = useNavigate();
   const isEdit = Boolean(id);
 
+  const goBack = () => {
+    if (window.history.length > 1) {
+      goBack();
+    } else {
+      navigate('/');
+    }
+  };
+
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [photoFiles, setPhotoFiles] = useState([]);
@@ -125,7 +133,7 @@ export default function VehicleForm() {
   if (loading) {
     return (
       <div className="space-y-4">
-        <button onClick={() => navigate(-1)} className="btn-ghost">
+        <button onClick={() => goBack()} className="btn-ghost">
           <ArrowLeft className="w-4 h-4" /> Back
         </button>
         <DetailSkeleton />
@@ -137,7 +145,7 @@ export default function VehicleForm() {
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <button onClick={() => navigate(-1)} className="btn-icon">
+        <button onClick={() => goBack()} className="btn-icon">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div>
@@ -318,7 +326,7 @@ export default function VehicleForm() {
         <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-800">
           <button
             type="button"
-            onClick={() => navigate(-1)}
+            onClick={() => goBack()}
             className="btn-secondary"
             disabled={saving}
           >

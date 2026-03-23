@@ -7,6 +7,15 @@ const api = axios.create({
   },
 });
 
+// Request interceptor: automatically remove Content-Type for FormData
+// so the browser sets the correct multipart boundary
+api.interceptors.request.use((config) => {
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+  }
+  return config;
+});
+
 // Response interceptor for error handling
 api.interceptors.response.use(
   (response) => response,

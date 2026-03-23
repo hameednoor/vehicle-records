@@ -42,7 +42,31 @@ function getDb() {
 function convertPlaceholders(sql) {
   if (!isPostgres) return sql;
   let idx = 0;
-  return sql.replace(/\?/g, () => `$${++idx}`);
+  // Replace ? placeholders but skip those inside single-quoted string literals.
+  // Walk the SQL character by character to correctly handle quoted strings.
+  let result = '';
+  let inString = false;
+  for (let i = 0; i < sql.length; i++) {
+    const ch = sql[i];
+    if (ch === "'" && !inString) {
+      inString = true;
+      result += ch;
+    } else if (ch === "'" && inString) {
+      // Check for escaped quote ''
+      if (i + 1 < sql.length && sql[i + 1] === "'") {
+        result += "''";
+        i++; // skip next quote
+      } else {
+        inString = false;
+        result += ch;
+      }
+    } else if (ch === '?' && !inString) {
+      result += `$${++idx}`;
+    } else {
+      result += ch;
+    }
+  }
+  return result;
 }
 
 /**
@@ -295,21 +319,20 @@ function createSqlJsRawWrapper(sqliteDb) {
     fs.writeFileSync(DB_PATH, buffer);
   }
 
-  let dirty = false;
-  const saveInterval = setInterval(() => {
-    if (dirty) {
+  // Debounced auto-save: saves shortly after the last write to avoid data loss
+  // on process crash. We also save synchronously on close().
+  let saveTimer = null;
+  function scheduleSave() {
+    if (saveTimer) return; // already scheduled
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
       try {
         save();
-        dirty = false;
       } catch (e) {
         console.error('Auto-save failed:', e.message);
       }
-    }
-  }, 5000);
-  if (saveInterval.unref) saveInterval.unref();
-
-  function markDirty() {
-    dirty = true;
+    }, 500);
+    if (saveTimer.unref) saveTimer.unref();
   }
 
   function flattenSqlJsParams(params) {
@@ -323,7 +346,7 @@ function createSqlJsRawWrapper(sqliteDb) {
       run(...params) {
         const flat = flattenSqlJsParams(params);
         sqliteDb.run(sql, flat);
-        markDirty();
+        scheduleSave();
         return { changes: sqliteDb.getRowsModified() };
       },
       get(...params) {
@@ -354,14 +377,26 @@ function createSqlJsRawWrapper(sqliteDb) {
 
   function exec(sql) {
     sqliteDb.exec(sql);
-    markDirty();
+    // Only schedule save for data-modifying statements, not for reads/PRAGMAs
+    const upper = sql.trimStart().toUpperCase();
+    if (upper.startsWith('INSERT') || upper.startsWith('UPDATE') || upper.startsWith('DELETE') ||
+        upper.startsWith('CREATE') || upper.startsWith('ALTER') || upper.startsWith('DROP')) {
+      scheduleSave();
+    }
   }
 
   function pragma(pragmaStr) {
+    const upper = pragmaStr.trim().toUpperCase();
     try {
       sqliteDb.exec(`PRAGMA ${pragmaStr};`);
-    } catch (_) {
-      // WAL mode not supported by sql.js in-memory; ignore silently
+    } catch (e) {
+      // WAL mode is not supported by sql.js (in-memory); ignore that silently.
+      // But propagate errors for critical pragmas like foreign_keys.
+      if (upper.startsWith('JOURNAL_MODE')) {
+        // WAL not supported in sql.js, safe to ignore
+      } else {
+        console.error(`PRAGMA ${pragmaStr} failed:`, e.message);
+      }
     }
   }
 
@@ -380,8 +415,11 @@ function createSqlJsRawWrapper(sqliteDb) {
   }
 
   function close() {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
     save();
-    clearInterval(saveInterval);
     sqliteDb.close();
   }
 
@@ -453,6 +491,8 @@ function getCreateTablesSql() {
         "fileType" TEXT,
         "ocrText" TEXT,
         "ocrProcessed" INTEGER DEFAULT 0,
+        "ocrCost" REAL,
+        "ocrCurrency" TEXT,
         "uploadedAt" TIMESTAMP DEFAULT NOW()
       );
 
@@ -540,6 +580,8 @@ function getCreateTablesSql() {
       fileType TEXT,
       ocrText TEXT,
       ocrProcessed INTEGER DEFAULT 0,
+      ocrCost REAL,
+      ocrCurrency TEXT,
       uploadedAt TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (serviceRecordId) REFERENCES service_records(id) ON DELETE CASCADE
     );
@@ -619,9 +661,21 @@ async function initDb() {
       'ALTER TABLE categories ADD COLUMN "defaultKms" REAL',
       'ALTER TABLE categories ADD COLUMN "defaultDays" INTEGER',
       'ALTER TABLE settings ADD COLUMN "whatsappApiKey" TEXT',
+      'ALTER TABLE invoices ADD COLUMN "ocrCost" REAL',
+      'ALTER TABLE invoices ADD COLUMN "ocrCurrency" TEXT',
     ];
     for (const stmt of alterStatements) {
-      try { await db.exec(stmt); } catch (e) { /* column already exists */ }
+      try {
+        await db.exec(stmt);
+      } catch (e) {
+        // SQLite: 'duplicate column name: X'
+        // PG: 'column "x" of relation "y" already exists'
+        // Ignore "already exists" / "duplicate column" errors; re-throw anything else
+        const msg = (e.message || '').toLowerCase();
+        if (!msg.includes('already exists') && !msg.includes('duplicate column')) {
+          throw e;
+        }
+      }
     }
 
     console.log('Database engine: PostgreSQL');
@@ -675,9 +729,21 @@ async function initDb() {
     'ALTER TABLE categories ADD COLUMN "defaultKms" REAL',
     'ALTER TABLE categories ADD COLUMN "defaultDays" INTEGER',
     'ALTER TABLE settings ADD COLUMN "whatsappApiKey" TEXT',
+    'ALTER TABLE invoices ADD COLUMN "ocrCost" REAL',
+    'ALTER TABLE invoices ADD COLUMN "ocrCurrency" TEXT',
   ];
   for (const stmt of alterStatements) {
-    try { await db.exec(stmt); } catch (e) { /* column already exists */ }
+    try {
+      await db.exec(stmt);
+    } catch (e) {
+      // SQLite: 'duplicate column name: X'
+      // PG: 'column "x" of relation "y" already exists'
+      // Ignore "already exists" / "duplicate column" errors; re-throw anything else
+      const msg = (e.message || '').toLowerCase();
+      if (!msg.includes('already exists') && !msg.includes('duplicate column')) {
+        throw e;
+      }
+    }
   }
 
   console.log('Database initialized successfully.');
