@@ -32,6 +32,16 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
+  // Lock body scroll when reminders modal is open
+  useEffect(() => {
+    if (showReminders) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [showReminders]);
+
   const fetchData = async () => {
     setLoading(true);
     try {

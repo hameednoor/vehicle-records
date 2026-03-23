@@ -75,8 +75,8 @@ export default function Settings() {
         ...prev,
         currency: s.currency || prev.currency,
         timezone: s.timezone || prev.timezone,
-        notificationEmails: s.notificationEmails || s.notification_emails || prev.notificationEmails,
-        whatsappNumber: s.whatsappNumber || s.whatsapp_number || prev.whatsappNumber,
+        notificationEmails: Array.isArray(s.notificationEmails) ? s.notificationEmails : Array.isArray(s.notification_emails) ? s.notification_emails : prev.notificationEmails,
+        whatsappNumber: s.whatsappNumber ?? s.whatsapp_number ?? prev.whatsappNumber,
         reminderBufferKms: s.reminderBufferKms ?? s.reminder_buffer_kms ?? prev.reminderBufferKms,
         reminderBufferDays: s.reminderBufferDays ?? s.reminder_buffer_days ?? prev.reminderBufferDays,
       }));

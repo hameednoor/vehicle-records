@@ -84,12 +84,16 @@ function VehiclePickerModal({ open, onClose, onSelect, title }) {
 
   useEffect(() => {
     if (open) {
+      document.body.style.overflow = 'hidden';
       setLoading(true);
       getVehicles()
         .then((data) => setVehicles(Array.isArray(data) ? data : (data?.vehicles || data?.data || [])))
         .catch(() => setVehicles([]))
         .finally(() => setLoading(false));
+    } else {
+      document.body.style.overflow = '';
     }
+    return () => { document.body.style.overflow = ''; };
   }, [open]);
 
   if (!open) return null;

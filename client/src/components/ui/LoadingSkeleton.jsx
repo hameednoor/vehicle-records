@@ -33,12 +33,14 @@ export function VehicleCardSkeleton() {
   );
 }
 
+const TABLE_WIDTHS = [75, 90, 65, 85, 70, 80, 95, 60];
+
 export function TableRowSkeleton({ columns = 5 }) {
   return (
     <tr className="animate-fade-in">
       {Array.from({ length: columns }).map((_, i) => (
         <td key={i} className="px-4 py-3">
-          <Skeleton className="h-4 rounded" width={`${60 + Math.random() * 40}%`} />
+          <Skeleton className="h-4 rounded" width={`${TABLE_WIDTHS[i % TABLE_WIDTHS.length]}%`} />
         </td>
       ))}
     </tr>
@@ -72,8 +74,8 @@ export function DetailSkeleton() {
       </div>
       {/* Content */}
       <div className="card p-6 space-y-4">
-        {[1, 2, 3, 4].map((i) => (
-          <Skeleton key={i} className="h-4 rounded" width={`${70 + Math.random() * 30}%`} />
+        {[85, 75, 95, 80].map((w, i) => (
+          <Skeleton key={i} className="h-4 rounded" width={`${w}%`} />
         ))}
       </div>
     </div>
