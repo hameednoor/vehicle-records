@@ -362,7 +362,7 @@ export default function Dashboard() {
                               {isOverdue ? 'Overdue' : 'Due'}: {item.nextDueDate}
                             </p>
                           )}
-                          {item.nextDueKms && (
+                          {item.nextDueKms != null && (
                             <p className="text-xs text-gray-500 mt-0.5">
                               Due at {Number(item.nextDueKms).toLocaleString()} km
                             </p>
