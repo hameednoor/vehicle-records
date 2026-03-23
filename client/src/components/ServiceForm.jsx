@@ -213,7 +213,7 @@ export default function ServiceForm() {
         categoryId: form.categoryId,
         date: form.date,
         kmsAtService: form.kms ? Number(form.kms) : null,
-        cost: currency !== 'AED' ? Number(convertedCost) : (form.cost ? Number(form.cost) : 0),
+        cost: currency !== 'AED' && convertedCost ? Number(convertedCost) : (form.cost ? Number(form.cost) : 0),
         originalCost: form.cost ? Number(form.cost) : null,
         originalCurrency: currency,
         exchangeRate: exchangeRate,
