@@ -258,10 +258,10 @@ export default function ServiceHistory({ vehicleId }) {
                           <Calendar className="w-3 h-3" />
                           {(() => { try { return date ? format(new Date(date), 'MMM d, yyyy') : 'N/A'; } catch { return 'N/A'; } })()}
                         </span>
-                        {(record.kmsAtService || record.kms_at_service || record.kms) && (
+                        {(record.kmsAtService != null || record.kms_at_service != null || record.kms != null) && (
                           <span className="flex items-center gap-1">
                             <Gauge className="w-3 h-3" />
-                            {Number(record.kmsAtService || record.kms_at_service || record.kms).toLocaleString()} km
+                            {Number(record.kmsAtService ?? record.kms_at_service ?? record.kms).toLocaleString()} km
                           </span>
                         )}
                         {record.provider && (
@@ -343,13 +343,13 @@ export default function ServiceHistory({ vehicleId }) {
                       )}
 
                       {/* Next due info */}
-                      {(record.nextDueKms || record.nextDueDays) && (
+                      {(record.nextDueKms != null || record.nextDueDays != null) && (
                         <div className="bg-amber-50 dark:bg-amber-950/30 rounded-lg p-3">
                           <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1">
                             Next Service Due
                           </p>
                           <div className="flex gap-4 text-sm text-amber-800 dark:text-amber-300">
-                            {record.nextDueKms && (
+                            {record.nextDueKms != null && (
                               <span>At {Number(record.nextDueKms).toLocaleString()} km</span>
                             )}
                             {record.nextDueDate && (
