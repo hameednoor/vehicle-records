@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, X, FileText, Image as ImageIcon } from 'lucide-react';
+import { showError } from './Toast';
 
 export default function DropZone({
   onFilesSelected,
@@ -15,8 +16,16 @@ export default function DropZone({
   compact = false,
 }) {
   const onDrop = useCallback(
-    (acceptedFiles) => {
-      if (onFilesSelected) {
+    (acceptedFiles, fileRejections) => {
+      if (fileRejections?.length > 0) {
+        const errors = fileRejections.map((r) => {
+          const name = r.file?.name || 'file';
+          const reasons = r.errors?.map((e) => e.message).join(', ') || 'invalid file';
+          return `${name}: ${reasons}`;
+        });
+        showError(errors.join('; '));
+      }
+      if (onFilesSelected && acceptedFiles.length > 0) {
         onFilesSelected(acceptedFiles);
       }
     },
