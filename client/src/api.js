@@ -45,7 +45,7 @@ export const deleteVehicle = (id) =>
 export const uploadVehiclePhoto = (id, formData) =>
   api
     .put(`/vehicles/${id}/photo`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      headers: { 'Content-Type': undefined },
     })
     .then((r) => r.data);
 
@@ -96,7 +96,7 @@ export const getUpcomingMaintenance = () =>
 export const uploadInvoices = (serviceRecordId, formData) =>
   api
     .post(`/invoices/upload/${serviceRecordId}`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      headers: { 'Content-Type': undefined },
     })
     .then((r) => r.data);
 
@@ -122,7 +122,7 @@ export const analyzeInvoice = (file) => {
   formData.append('invoice', file);
   return api
     .post('/invoices/analyze', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      headers: { 'Content-Type': undefined },
       timeout: 120000, // 2 min for OCR processing
     })
     .then((r) => r.data);
