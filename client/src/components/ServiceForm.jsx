@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, X, Plus } from 'lucide-react';
+import { ArrowLeft, Save, X, Plus, Loader2, ScanLine } from 'lucide-react';
 import {
   getVehicles,
   getVehicle,
@@ -9,9 +9,10 @@ import {
   createServiceRecord,
   uploadInvoices,
   getExchangeRate,
+  analyzeInvoice,
 } from '../api';
 import DropZone from './ui/DropZone';
-import { showSuccess, showError } from './ui/Toast';
+import { showSuccess, showError, showInfo } from './ui/Toast';
 import { format } from 'date-fns';
 
 export default function ServiceForm() {
@@ -30,6 +31,8 @@ export default function ServiceForm() {
   const [exchangeRate, setExchangeRate] = useState(1);
   const [convertedCost, setConvertedCost] = useState('');
   const [loadingRate, setLoadingRate] = useState(false);
+  const [analyzingInvoice, setAnalyzingInvoice] = useState(false);
+  const [invoiceDetected, setInvoiceDetected] = useState(null); // { cost, currency }
 
   const currencies = [
     { code: 'AED', name: 'AED - UAE Dirham' },
@@ -376,9 +379,43 @@ export default function ServiceForm() {
         <div>
           <label className="label">Invoices / Receipts</label>
           <DropZone
-            onFilesSelected={(files) =>
-              setInvoiceFiles((prev) => [...prev, ...files])
-            }
+            onFilesSelected={(files) => {
+              setInvoiceFiles((prev) => [...prev, ...files]);
+              // Auto-analyze the first image file for cost/currency
+              const imageFile = files.find((f) =>
+                f.type?.startsWith('image/') ||
+                /\.(jpg|jpeg|png|webp|heic)$/i.test(f.name)
+              );
+              if (imageFile && !form.cost) {
+                setAnalyzingInvoice(true);
+                setInvoiceDetected(null);
+                analyzeInvoice(imageFile)
+                  .then((result) => {
+                    if (result.cost || result.currency) {
+                      setInvoiceDetected(result);
+                      if (result.cost && !form.cost) {
+                        handleChange('cost', String(result.cost));
+                      }
+                      if (result.currency) {
+                        const validCode = currencies.find(
+                          (c) => c.code === result.currency
+                        );
+                        if (validCode) setCurrency(result.currency);
+                      }
+                      const parts = [];
+                      if (result.currency) parts.push(result.currency);
+                      if (result.cost) parts.push(result.cost.toLocaleString());
+                      if (parts.length > 0) {
+                        showSuccess(`Detected from invoice: ${parts.join(' ')}`);
+                      }
+                    }
+                  })
+                  .catch(() => {
+                    // Silent fail — user can enter manually
+                  })
+                  .finally(() => setAnalyzingInvoice(false));
+              }
+            }}
             files={invoiceFiles}
             onRemove={(index) =>
               setInvoiceFiles((prev) => prev.filter((_, i) => i !== index))
@@ -386,6 +423,20 @@ export default function ServiceForm() {
             maxFiles={10}
             label="Upload invoices or receipts"
           />
+          {analyzingInvoice && (
+            <div className="flex items-center gap-2 mt-2 text-sm text-brand-600 dark:text-brand-400">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <ScanLine className="w-4 h-4 animate-pulse" />
+              <span>Scanning invoice for cost &amp; currency...</span>
+            </div>
+          )}
+          {invoiceDetected && !analyzingInvoice && (
+            <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2">
+              Auto-detected: {invoiceDetected.currency || 'Unknown currency'}{' '}
+              {invoiceDetected.cost?.toLocaleString() || '—'}
+              {' '}<span className="text-gray-400">(edit above if needed)</span>
+            </p>
+          )}
         </div>
 
         {/* Next Due Section */}

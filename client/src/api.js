@@ -108,6 +108,17 @@ export const downloadInvoice = (id) =>
 export const searchInvoices = (params) =>
   api.get('/invoices/search', { params }).then((r) => r.data);
 
+export const analyzeInvoice = (file) => {
+  const formData = new FormData();
+  formData.append('invoice', file);
+  return api
+    .post('/invoices/analyze', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000, // 2 min for OCR processing
+    })
+    .then((r) => r.data);
+};
+
 // ============ KM Logs ============
 export const logKm = (vehicleId, data) =>
   api.post(`/vehicles/${vehicleId}/km-logs`, data).then((r) => r.data);

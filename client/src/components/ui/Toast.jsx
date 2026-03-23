@@ -7,6 +7,9 @@ export const showSuccess = (message) =>
 export const showError = (message) =>
   toast.error(message || 'Something went wrong');
 
+export const showInfo = (message) =>
+  toast(message, { icon: '\u2139\ufe0f' });
+
 export const showLoading = (message = 'Loading...') =>
   toast.loading(message);
 

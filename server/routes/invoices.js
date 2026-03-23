@@ -4,10 +4,43 @@ const fs = require('fs');
 const path = require('path');
 const { getDb } = require('../db/database');
 const { arrayUpload } = require('../middleware/upload');
-const { processInvoice } = require('../services/ocr');
+const { processInvoice, analyzeInvoice } = require('../services/ocr');
 const { deleteFile, isCloudStorage, UPLOADS_DIR } = require('../services/storage');
+const { upload } = require('../middleware/upload');
 
 const router = express.Router();
+
+/**
+ * POST /analyze - Upload a single invoice image and extract cost + currency via OCR.
+ * Returns { cost, currency, rawText } without creating any DB records.
+ */
+router.post('/analyze', upload.single('invoice'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded.' });
+    }
+
+    const result = await analyzeInvoice(req.file.path);
+
+    // Clean up the temp file
+    try {
+      fs.unlinkSync(req.file.path);
+    } catch { /* ignore */ }
+
+    res.json({
+      cost: result.cost,
+      currency: result.currency,
+      rawText: result.rawText,
+    });
+  } catch (error) {
+    console.error('Error analyzing invoice:', error.message);
+    // Clean up on error
+    if (req.file?.path) {
+      try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+    }
+    res.status(500).json({ error: 'Failed to analyze invoice.' });
+  }
+});
 
 /**
  * POST /upload/:serviceRecordId - Upload one or more invoices.
