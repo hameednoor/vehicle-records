@@ -42,12 +42,14 @@ router.post(
         id, vehicleId, kms
       );
 
-      // Update vehicle currentKms to the latest reading
+      // Update vehicle currentKms only if the new reading is higher
       const now = new Date().toISOString();
-      await db.run(
-        `UPDATE vehicles SET "currentKms" = ?, "updatedAt" = ? WHERE id = ?`,
-        kms, now, vehicleId
-      );
+      if (kms > (vehicle.currentKms || 0)) {
+        await db.run(
+          `UPDATE vehicles SET "currentKms" = ?, "updatedAt" = ? WHERE id = ?`,
+          kms, now, vehicleId
+        );
+      }
 
       const log = await db.get('SELECT * FROM km_logs WHERE id = ?', id);
 

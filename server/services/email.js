@@ -12,7 +12,7 @@ function createTransporter(config = {}) {
   const options = {
     host: config.host || process.env.SMTP_HOST || 'smtp.gmail.com',
     port: parseInt(config.port || process.env.SMTP_PORT || '587', 10),
-    secure: (config.port || process.env.SMTP_PORT || '587') === '465',
+    secure: String(config.port || process.env.SMTP_PORT || '587') === '465',
     auth: {
       user: config.user || process.env.SMTP_USER || '',
       pass: config.pass || process.env.SMTP_PASS || '',

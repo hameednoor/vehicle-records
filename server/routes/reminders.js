@@ -3,6 +3,7 @@ const { body, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
 const { getDb } = require('../db/database');
 const { sendEmail } = require('../services/email');
+const { sendTestWhatsApp } = require('../services/whatsapp');
 
 const router = express.Router();
 
@@ -206,11 +207,11 @@ router.delete('/:id', async (req, res) => {
 });
 
 /**
- * POST /test - Send a test reminder email.
+ * POST /test - Send a test reminder (email and/or WhatsApp).
  */
 router.post(
   '/test',
-  [body('to').trim().notEmpty().withMessage('Recipient email is required.')],
+  [body('to').trim().notEmpty().withMessage('Recipient is required.')],
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -218,8 +219,52 @@ router.post(
     }
 
     try {
-      const { to, type } = req.body;
+      const { to, type, channel } = req.body;
+      const isWhatsApp = channel === 'whatsapp' || channel === 'both' || (to && to.startsWith('+'));
 
+      // Send WhatsApp test if channel is whatsapp/both or recipient looks like a phone number
+      if (isWhatsApp) {
+        if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
+          return res.status(503).json({
+            error: 'Twilio WhatsApp not configured. Please set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN environment variables.',
+          });
+        }
+
+        const db = getDb();
+        const settings = await db.get('SELECT * FROM settings WHERE id = 1');
+        const phone = settings?.whatsappNumber || to;
+
+        const waResult = await sendTestWhatsApp(phone);
+
+        // Also send email if channel is 'both'
+        if (channel === 'both' && to && !to.startsWith('+')) {
+          const subject =
+            type === 'kmLog'
+              ? 'Test: KM Log Reminder'
+              : 'Test: Maintenance Reminder';
+
+          const html = `
+            <div style="font-family:Arial,sans-serif;padding:20px;">
+              <h2 style="color:#1B4F72;">Test Reminder</h2>
+              <p>This is a test reminder from your Vehicle Maintenance Tracker.</p>
+              <p>If you received this email, your notification settings are configured correctly.</p>
+              <p style="color:#5D6D7E;font-size:12px;margin-top:20px;">
+                Sent at: ${new Date().toISOString()}
+              </p>
+            </div>
+          `;
+          await sendEmail({ to, subject, html });
+        }
+
+        if (waResult) {
+          res.json({ message: 'Test WhatsApp notification sent successfully.' });
+        } else {
+          res.status(500).json({ error: 'Failed to send WhatsApp test notification.' });
+        }
+        return;
+      }
+
+      // Default: send email test
       const subject =
         type === 'kmLog'
           ? 'Test: KM Log Reminder'

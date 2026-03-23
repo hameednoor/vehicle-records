@@ -235,12 +235,12 @@ export default function ServiceHistory({ vehicleId }) {
                       <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
-                          {date ? format(new Date(date), 'MMM d, yyyy') : 'N/A'}
+                          {(() => { try { return date ? format(new Date(date), 'MMM d, yyyy') : 'N/A'; } catch { return 'N/A'; } })()}
                         </span>
-                        {record.kms && (
+                        {(record.kmsAtService || record.kms_at_service || record.kms) && (
                           <span className="flex items-center gap-1">
                             <Gauge className="w-3 h-3" />
-                            {Number(record.kms).toLocaleString()} km
+                            {Number(record.kmsAtService || record.kms_at_service || record.kms).toLocaleString()} km
                           </span>
                         )}
                         {record.provider && (
@@ -312,10 +312,10 @@ export default function ServiceHistory({ vehicleId }) {
                           </p>
                           <div className="flex gap-4 text-sm text-amber-800 dark:text-amber-300">
                             {record.nextDueKms && (
-                              <span>In {Number(record.nextDueKms).toLocaleString()} km</span>
+                              <span>At {Number(record.nextDueKms).toLocaleString()} km</span>
                             )}
-                            {record.nextDueDays && (
-                              <span>In {record.nextDueDays} days</span>
+                            {record.nextDueDate && (
+                              <span>By {record.nextDueDate}</span>
                             )}
                           </div>
                         </div>

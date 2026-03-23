@@ -11,11 +11,20 @@ const api = axios.create({
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    const message =
-      error.response?.data?.error ||
-      error.response?.data?.message ||
-      error.message ||
-      'An unexpected error occurred';
+    const data = error.response?.data;
+    let message;
+
+    if (data?.errors && Array.isArray(data.errors)) {
+      // express-validator format: { errors: [{ msg: "..." }, ...] }
+      message = data.errors.map((e) => e.msg || e.message).join('. ');
+    } else {
+      message =
+        data?.error ||
+        data?.message ||
+        error.message ||
+        'An unexpected error occurred';
+    }
+
     return Promise.reject(new Error(message));
   }
 );
@@ -44,7 +53,7 @@ export const getVehicleStats = (id) =>
   api.get(`/vehicles/${id}/stats`).then((r) => r.data);
 
 export const updateKms = (id, data) =>
-  api.post('/km-logs', { vehicleId: id, kms: data.kms }).then((r) => r.data);
+  api.post('/km-logs', { vehicleId: id, kms: data.kms, date: data.date }).then((r) => r.data);
 
 // ============ Categories ============
 export const getCategories = () => api.get('/categories').then((r) => r.data);
@@ -56,7 +65,7 @@ export const updateCategory = (id, data) =>
   api.put(`/categories/${id}`, data).then((r) => r.data);
 
 export const archiveCategory = (id) =>
-  api.patch(`/categories/${id}/archive`).then((r) => r.data);
+  api.put(`/categories/${id}/archive`).then((r) => r.data);
 
 export const deleteCategory = (id) =>
   api.delete(`/categories/${id}`).then((r) => r.data);
@@ -121,16 +130,16 @@ export const analyzeInvoice = (file) => {
 
 // ============ KM Logs ============
 export const logKm = (vehicleId, data) =>
-  api.post(`/vehicles/${vehicleId}/km-logs`, data).then((r) => r.data);
+  api.post('/km-logs', { vehicleId, ...data }).then((r) => r.data);
 
 export const getVehicleKmLogs = (vehicleId) =>
-  api.get(`/vehicles/${vehicleId}/km-logs`).then((r) => r.data);
+  api.get(`/km-logs/vehicle/${vehicleId}`).then((r) => r.data);
 
 // ============ Reminders ============
 export const getReminders = () => api.get('/reminders').then((r) => r.data);
 
 export const getVehicleReminders = (vehicleId) =>
-  api.get(`/vehicles/${vehicleId}/reminders`).then((r) => r.data);
+  api.get(`/reminders/vehicle/${vehicleId}`).then((r) => r.data);
 
 export const createReminder = (data) =>
   api.post('/reminders', data).then((r) => r.data);
@@ -150,12 +159,8 @@ export const updateSettings = (data) =>
 export const exportData = () =>
   api.get('/settings/export', { responseType: 'blob' }).then((r) => r.data);
 
-export const importData = (formData) =>
-  api
-    .post('/settings/import', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    .then((r) => r.data);
+export const importData = (data) =>
+  api.post('/settings/import', data).then((r) => r.data);
 
 // ============ Reports ============
 export const getCostByVehicle = (params) =>

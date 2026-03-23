@@ -1,7 +1,19 @@
 const cron = require('node-cron');
 const { sendMaintenanceReminder, sendKmLogReminder } = require('./email');
+const { sendMaintenanceWhatsApp, sendKmLogWhatsApp } = require('./whatsapp');
 
 let schedulerTask = null;
+// Track sent reminders to avoid flooding (key: "recordId-date", resets daily)
+const sentToday = new Set();
+let lastResetDate = '';
+
+function resetSentTrackingIfNewDay() {
+  const today = new Date().toISOString().split('T')[0];
+  if (today !== lastResetDate) {
+    sentToday.clear();
+    lastResetDate = today;
+  }
+}
 
 /**
  * Start the scheduler that checks for due maintenance reminders every hour.
@@ -31,6 +43,7 @@ function startScheduler(db) {
  * Run all reminder checks.
  */
 async function runReminderChecks(db) {
+  resetSentTrackingIfNewDay();
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] Running reminder checks...`);
 
@@ -48,7 +61,9 @@ async function runReminderChecks(db) {
 }
 
 /**
- * Check for upcoming or overdue maintenance based on date and KM thresholds.
+ * Check for upcoming or overdue maintenance based on whichever is closer: date or KM.
+ * Since KM readings are not updated periodically, we check both thresholds and
+ * send ONE reminder per service record if either condition is met.
  */
 async function checkMaintenanceReminders(db) {
   // Get settings for buffer values
@@ -66,65 +81,43 @@ async function checkMaintenanceReminders(db) {
      WHERE rc."isActive" = 1 AND rc.type = 'maintenance'`
   );
 
+  const today = new Date().toISOString().split('T')[0];
+  const bufferDate = new Date();
+  bufferDate.setDate(bufferDate.getDate() + bufferDays);
+  const bufferDateStr = bufferDate.toISOString().split('T')[0];
+
   for (const config of reminderConfigs) {
     try {
       const recipients = parseRecipients(config.recipients, settings);
       if (recipients.length === 0) continue;
 
-      // Find service records with upcoming due dates or KMs for this vehicle
-      const today = new Date().toISOString().split('T')[0];
-
-      // Calculate the buffer date (today + bufferDays)
-      const bufferDate = new Date();
-      bufferDate.setDate(bufferDate.getDate() + bufferDays);
-      const bufferDateStr = bufferDate.toISOString().split('T')[0];
-
-      // Check date-based reminders
-      const dateBasedRecords = await db.all(
-        `SELECT sr.*, c.name as "categoryName", c.id as "catId"
-         FROM service_records sr
-         JOIN categories c ON sr."categoryId" = c.id
-         WHERE sr."vehicleId" = ?
-           AND sr."nextDueDate" IS NOT NULL
-           AND sr."nextDueDate" <= ?
-         ORDER BY sr."nextDueDate" ASC`,
-        config.vehicleId, bufferDateStr
-      );
-
-      for (const record of dateBasedRecords) {
-        const isOverdue = record.nextDueDate < today;
-        record._isOverdue = isOverdue;
-
-        const vehicle = {
-          name: config.vehicleName,
-          currentKms: config.currentKms,
-          _recipients: recipients,
-        };
-        const category = { name: record.categoryName };
-
-        sendMaintenanceReminder(vehicle, record, category).catch((err) => {
-          console.error(`Failed to send date-based reminder:`, err.message);
-        });
-      }
-
-      // Check KM-based reminders
       const currentKms = config.currentKms || 0;
       const kmsThreshold = currentKms + bufferKms;
 
-      const kmsBasedRecords = await db.all(
+      // Single query: get records where EITHER date or KM threshold is approaching
+      const dueRecords = await db.all(
         `SELECT sr.*, c.name as "categoryName", c.id as "catId"
          FROM service_records sr
          JOIN categories c ON sr."categoryId" = c.id
          WHERE sr."vehicleId" = ?
-           AND sr."nextDueKms" IS NOT NULL
-           AND sr."nextDueKms" <= ?
-         ORDER BY sr."nextDueKms" ASC`,
-        config.vehicleId, kmsThreshold
+           AND (
+             (sr."nextDueDate" IS NOT NULL AND sr."nextDueDate" <= ?)
+             OR
+             (sr."nextDueKms" IS NOT NULL AND sr."nextDueKms" <= ?)
+           )
+         ORDER BY sr."nextDueDate" ASC NULLS LAST`,
+        config.vehicleId, bufferDateStr, kmsThreshold
       );
 
-      for (const record of kmsBasedRecords) {
-        const isOverdue = record.nextDueKms <= currentKms;
-        record._isOverdue = isOverdue;
+      for (const record of dueRecords) {
+        // One reminder per record per day, regardless of which threshold triggered
+        const sentKey = `maint-${record.id}-${today}`;
+        if (sentToday.has(sentKey)) continue;
+
+        // Overdue if either date is past or KMs have been exceeded
+        const dateOverdue = record.nextDueDate && record.nextDueDate < today;
+        const kmOverdue = record.nextDueKms && record.nextDueKms <= currentKms;
+        record._isOverdue = dateOverdue || kmOverdue;
 
         const vehicle = {
           name: config.vehicleName,
@@ -133,9 +126,25 @@ async function checkMaintenanceReminders(db) {
         };
         const category = { name: record.categoryName };
 
-        sendMaintenanceReminder(vehicle, record, category).catch((err) => {
-          console.error(`Failed to send KM-based reminder:`, err.message);
-        });
+        sentToday.add(sentKey);
+
+        const channel = config.channel || 'email';
+
+        // Send email if channel is 'email' or 'both'
+        if (channel === 'email' || channel === 'both') {
+          sendMaintenanceReminder(vehicle, record, category).catch((err) => {
+            sentToday.delete(sentKey);
+            console.error(`Failed to send maintenance reminder:`, err.message);
+          });
+        }
+
+        // Send WhatsApp if channel is 'whatsapp' or 'both'
+        if (channel === 'whatsapp' || channel === 'both') {
+          const waPhone = settings.whatsappNumber;
+          sendMaintenanceWhatsApp(vehicle, record, category, waPhone).catch((err) => {
+            console.error(`Failed to send maintenance WhatsApp reminder:`, err.message);
+          });
+        }
       }
     } catch (error) {
       console.error(
@@ -201,9 +210,21 @@ async function checkKmLogReminders(db) {
           _recipients: recipients,
         };
 
-        sendKmLogReminder(vehicle).catch((err) => {
-          console.error(`Failed to send KM log reminder:`, err.message);
-        });
+        // Send email if channel is 'email' or 'both'
+        const channel = config.channel || 'email';
+        if (channel === 'email' || channel === 'both') {
+          sendKmLogReminder(vehicle).catch((err) => {
+            console.error(`Failed to send KM log reminder:`, err.message);
+          });
+        }
+
+        // Send WhatsApp if channel is 'whatsapp' or 'both'
+        if (channel === 'whatsapp' || channel === 'both') {
+          const waPhone = settings.whatsappNumber;
+          sendKmLogWhatsApp(vehicle, waPhone).catch((err) => {
+            console.error(`Failed to send KM log WhatsApp reminder:`, err.message);
+          });
+        }
       }
     } catch (error) {
       console.error(

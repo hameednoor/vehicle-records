@@ -86,7 +86,7 @@ function VehiclePickerModal({ open, onClose, onSelect, title }) {
     if (open) {
       setLoading(true);
       getVehicles()
-        .then((data) => setVehicles(Array.isArray(data) ? data : []))
+        .then((data) => setVehicles(Array.isArray(data) ? data : (data?.vehicles || data?.data || [])))
         .catch(() => setVehicles([]))
         .finally(() => setLoading(false));
     }
@@ -112,7 +112,7 @@ function VehiclePickerModal({ open, onClose, onSelect, title }) {
             <div className="space-y-1">
               {vehicles.map((v) => (
                 <button
-                  key={v.id}
+                  key={v._id || v.id}
                   onClick={() => onSelect(v)}
                   className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left
                              hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
@@ -211,9 +211,10 @@ export default function Layout({ children }) {
   const [kmVehicle, setKmVehicle] = useState(null);
 
   const handleVehicleSelected = (vehicle) => {
+    const vid = vehicle._id || vehicle.id;
     if (pickerMode === 'service') {
       setPickerMode(null);
-      navigate(`/vehicles/${vehicle.id}/service/new`);
+      navigate(`/vehicles/${vid}/service/new`);
     } else if (pickerMode === 'kms') {
       setPickerMode(null);
       setKmVehicle(vehicle);

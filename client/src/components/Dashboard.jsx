@@ -332,7 +332,7 @@ export default function Dashboard() {
                       }`}
                       onClick={() => {
                         setShowReminders(false);
-                        navigate(`/vehicles/${item.vehicleId}`);
+                        navigate(`/vehicles/${item.vehicleId || item.vehicle_id}`);
                       }}
                       role="button"
                       tabIndex={0}

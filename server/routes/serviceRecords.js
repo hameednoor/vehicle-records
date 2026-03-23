@@ -47,13 +47,19 @@ router.get('/upcoming', async (req, res) => {
       bufferKms
     );
 
-    // Merge and deduplicate
-    const seen = new Set();
+    // Merge and deduplicate (keep overdue status if either source marks it)
+    const seen = new Map();
     const combined = [];
 
     for (const record of [...dateRecords, ...kmsRecords]) {
-      if (!seen.has(record.id)) {
-        seen.add(record.id);
+      if (seen.has(record.id)) {
+        // If this duplicate is overdue but the existing one isn't, upgrade it
+        const existing = seen.get(record.id);
+        if (Number(record.isOverdue) === 1 && Number(existing.isOverdue) !== 1) {
+          existing.isOverdue = 1;
+        }
+      } else {
+        seen.set(record.id, record);
         combined.push(record);
       }
     }

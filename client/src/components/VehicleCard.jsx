@@ -83,7 +83,7 @@ export default function VehicleCard({ vehicle, status = 'up-to-date', onUpdateKm
           </div>
           {lastServiceDate && (
             <span className="text-gray-500 dark:text-gray-400 text-xs">
-              Last: {format(new Date(lastServiceDate), 'MMM d, yyyy')}
+              Last: {(() => { try { return format(new Date(lastServiceDate), 'MMM d, yyyy'); } catch { return lastServiceDate; } })()}
             </span>
           )}
         </div>

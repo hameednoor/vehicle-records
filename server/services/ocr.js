@@ -53,7 +53,7 @@ async function processInvoice(filePath) {
     const ext = path.extname(filePath).toLowerCase();
     if (ext === '.pdf') return null;
 
-    const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.heic'];
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
     if (!imageExtensions.includes(ext)) return null;
 
     const Tesseract = require('tesseract.js');
@@ -104,10 +104,12 @@ function parseInvoiceText(text) {
     detectedCurrency = codeMatch[1].toUpperCase();
   }
 
-  // Check for currency symbols if no code found
+  // Check for currency symbols if no code found (check multi-char symbols first)
   if (!detectedCurrency) {
-    for (const [symbol, code] of Object.entries(CURRENCY_MAP)) {
-      if (symbol.length <= 3 && /^[A-Z]{3}$/.test(symbol)) continue; // skip codes already checked
+    const symbolEntries = Object.entries(CURRENCY_MAP)
+      .filter(([symbol]) => !(symbol.length <= 3 && /^[A-Z]{3}$/.test(symbol)))
+      .sort((a, b) => b[0].length - a[0].length); // longer symbols first (C$ before $)
+    for (const [symbol, code] of symbolEntries) {
       if (text.includes(symbol)) {
         detectedCurrency = code;
         break;

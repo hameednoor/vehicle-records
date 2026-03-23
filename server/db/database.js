@@ -590,6 +590,7 @@ async function initDb() {
       'ALTER TABLE service_records ADD COLUMN "exchangeRate" REAL',
       'ALTER TABLE categories ADD COLUMN "defaultKms" REAL',
       'ALTER TABLE categories ADD COLUMN "defaultDays" INTEGER',
+      'ALTER TABLE settings ADD COLUMN "whatsappApiKey" TEXT',
     ];
     for (const stmt of alterStatements) {
       try { await db.exec(stmt); } catch (e) { /* column already exists */ }
@@ -645,6 +646,7 @@ async function initDb() {
     'ALTER TABLE service_records ADD COLUMN "exchangeRate" REAL',
     'ALTER TABLE categories ADD COLUMN "defaultKms" REAL',
     'ALTER TABLE categories ADD COLUMN "defaultDays" INTEGER',
+    'ALTER TABLE settings ADD COLUMN "whatsappApiKey" TEXT',
   ];
   for (const stmt of alterStatements) {
     try { await db.exec(stmt); } catch (e) { /* column already exists */ }

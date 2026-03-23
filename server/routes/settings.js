@@ -14,8 +14,8 @@ router.get('/', async (req, res) => {
     if (!settings) {
       // Create default settings if they don't exist
       await db.run(
-        `INSERT INTO settings (id, currency, timezone, emails, "whatsappNumber", "reminderBufferKms", "reminderBufferDays")
-         VALUES (1, 'AED', 'Asia/Dubai', '[]', NULL, 500, 7)`
+        `INSERT INTO settings (id, currency, timezone, emails, "whatsappNumber", "whatsappApiKey", "reminderBufferKms", "reminderBufferDays")
+         VALUES (1, 'AED', 'Asia/Dubai', '[]', NULL, NULL, 500, 7)`
       );
       settings = await db.get('SELECT * FROM settings WHERE id = 1');
     }
@@ -40,13 +40,13 @@ router.put('/', async (req, res) => {
 
     if (!existing) {
       await db.run(
-        `INSERT INTO settings (id, currency, timezone, emails, "whatsappNumber", "reminderBufferKms", "reminderBufferDays")
-         VALUES (1, 'AED', 'Asia/Dubai', '[]', NULL, 500, 7)`
+        `INSERT INTO settings (id, currency, timezone, emails, "whatsappNumber", "whatsappApiKey", "reminderBufferKms", "reminderBufferDays")
+         VALUES (1, 'AED', 'Asia/Dubai', '[]', NULL, NULL, 500, 7)`
       );
       existing = await db.get('SELECT * FROM settings WHERE id = 1');
     }
 
-    const { currency, timezone, emails, whatsappNumber, reminderBufferKms, reminderBufferDays } =
+    const { currency, timezone, emails, whatsappNumber, whatsappApiKey, reminderBufferKms, reminderBufferDays } =
       req.body;
 
     const emailsJson =
@@ -57,12 +57,13 @@ router.put('/', async (req, res) => {
     await db.run(
       `UPDATE settings
        SET currency = ?, timezone = ?, emails = ?, "whatsappNumber" = ?,
-           "reminderBufferKms" = ?, "reminderBufferDays" = ?, "updatedAt" = ?
+           "whatsappApiKey" = ?, "reminderBufferKms" = ?, "reminderBufferDays" = ?, "updatedAt" = ?
        WHERE id = 1`,
       currency !== undefined ? currency : existing.currency,
       timezone !== undefined ? timezone : existing.timezone,
       emailsJson,
       whatsappNumber !== undefined ? whatsappNumber : existing.whatsappNumber,
+      whatsappApiKey !== undefined ? whatsappApiKey : existing.whatsappApiKey,
       reminderBufferKms !== undefined ? reminderBufferKms : existing.reminderBufferKms,
       reminderBufferDays !== undefined ? reminderBufferDays : existing.reminderBufferDays,
       now
@@ -135,11 +136,12 @@ router.post('/import', async (req, res) => {
     // Import categories
     if (data.categories && Array.isArray(data.categories)) {
       const sql = db.upsertSql(
-        `INSERT OR REPLACE INTO categories (id, name, "isDefault", "isArchived", "createdAt")
-         VALUES (?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO categories (id, name, "isDefault", "isArchived", "defaultKms", "defaultDays", "createdAt")
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
       );
       for (const cat of data.categories) {
-        await db.run(sql, cat.id, cat.name, cat.isDefault, cat.isArchived, cat.createdAt);
+        await db.run(sql, cat.id, cat.name, cat.isDefault, cat.isArchived,
+          cat.defaultKms || null, cat.defaultDays || null, cat.createdAt);
         counts.categories++;
       }
     }
@@ -166,15 +168,16 @@ router.post('/import', async (req, res) => {
       const sql = db.upsertSql(
         `INSERT OR REPLACE INTO service_records
          (id, "vehicleId", "categoryId", date, "kmsAtService", cost, currency, provider, notes,
-          "nextDueKms", "nextDueDays", "nextDueDate", "createdAt")
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          "nextDueKms", "nextDueDays", "nextDueDate", "originalCost", "originalCurrency", "exchangeRate", "createdAt")
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       );
       for (const sr of data.serviceRecords) {
         await db.run(
           sql,
           sr.id, sr.vehicleId, sr.categoryId, sr.date, sr.kmsAtService,
           sr.cost, sr.currency, sr.provider, sr.notes, sr.nextDueKms,
-          sr.nextDueDays, sr.nextDueDate, sr.createdAt
+          sr.nextDueDays, sr.nextDueDate, sr.originalCost || null,
+          sr.originalCurrency || null, sr.exchangeRate || null, sr.createdAt
         );
         counts.serviceRecords++;
       }

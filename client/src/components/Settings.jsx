@@ -13,6 +13,7 @@ import {
   X,
   Plus,
   Info,
+  HelpCircle,
 } from 'lucide-react';
 import { getSettings, updateSettings, exportData, importData } from '../api';
 import { Skeleton } from './ui/LoadingSkeleton';
@@ -146,9 +147,9 @@ export default function Settings() {
 
     const toastId = showLoading('Importing data...');
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      await importData(formData);
+      const text = await file.text();
+      const data = JSON.parse(text);
+      await importData(data);
       dismissToast(toastId);
       showSuccess('Data imported successfully');
       fetchSettings();
@@ -282,7 +283,15 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* WhatsApp */}
+      </div>
+
+      {/* WhatsApp Configuration */}
+      <div className="card p-6 space-y-5">
+        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-50 flex items-center gap-2">
+          <MessageSquare className="w-4 h-4 text-brand-600 dark:text-brand-400" />
+          WhatsApp Configuration
+        </h2>
+
         <div>
           <label className="label" htmlFor="whatsapp">
             <MessageSquare className="inline w-3.5 h-3.5 mr-1" />
@@ -296,6 +305,14 @@ export default function Settings() {
             onChange={(e) => handleChange('whatsappNumber', e.target.value)}
             placeholder="+971 50 123 4567"
           />
+        </div>
+
+        <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
+          <HelpCircle className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-blue-700 dark:text-blue-300">
+            WhatsApp notifications are powered by <strong>Twilio</strong> (Meta-approved).
+            Ensure the number above has joined the Twilio sandbox by sending <strong>"join show-two"</strong> to <strong>+1 415 523 8886</strong> on WhatsApp.
+          </p>
         </div>
       </div>
 

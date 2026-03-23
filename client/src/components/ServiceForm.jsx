@@ -149,7 +149,9 @@ export default function ServiceForm() {
       const cat = categories.find((c) => (c._id || c.id) === categoryId);
       if (cat) {
         if (cat.defaultKms && !form.nextDueKms) {
-          handleChange('nextDueKms', String(cat.defaultKms));
+          // Convert interval to absolute: currentKms + interval
+          const currentKms = Number(form.kms) || 0;
+          handleChange('nextDueKms', String(currentKms + Number(cat.defaultKms)));
         }
         if (cat.defaultDays && !form.nextDueDays) {
           handleChange('nextDueDays', String(cat.defaultDays));
@@ -185,6 +187,16 @@ export default function ServiceForm() {
 
     if (!form.vehicleId) {
       showError('Please select a vehicle');
+      return;
+    }
+
+    if (!form.categoryId) {
+      showError('Please select a category');
+      return;
+    }
+
+    if (!form.date) {
+      showError('Please select a service date');
       return;
     }
 
@@ -311,6 +323,7 @@ export default function ServiceForm() {
             className="select"
             value={form.categoryId}
             onChange={(e) => handleCategoryChange(e.target.value)}
+            disabled={loadingData}
           >
             <option value="">Select a category</option>
             {categories.map((c) => (
@@ -478,7 +491,7 @@ export default function ServiceForm() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="label" htmlFor="nextKms">
-                Due in Kilometers
+                Next Due at KMs
               </label>
               <input
                 id="nextKms"
@@ -486,11 +499,11 @@ export default function ServiceForm() {
                 className="input"
                 value={form.nextDueKms}
                 onChange={(e) => handleChange('nextDueKms', e.target.value)}
-                placeholder="e.g., 10000"
+                placeholder="e.g., 62000"
                 min="0"
               />
               <p className="text-xs text-gray-500 mt-1">
-                KMs from now until next service
+                Odometer reading when next service is due
               </p>
             </div>
             <div>

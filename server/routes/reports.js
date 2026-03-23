@@ -482,7 +482,7 @@ router.get('/export/pdf', async (req, res) => {
  */
 function truncate(str, maxLen) {
   if (!str) return '';
-  return str.length > maxLen ? str.substring(0, maxLen - 1) + '...' : str;
+  return str.length > maxLen ? str.substring(0, maxLen - 3) + '...' : str;
 }
 
 module.exports = router;

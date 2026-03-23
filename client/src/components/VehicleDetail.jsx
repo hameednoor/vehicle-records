@@ -125,10 +125,15 @@ export default function VehicleDetail() {
 
   // KM chart data
   const kmChartData = kmLogs
-    .map((log) => ({
-      date: format(new Date(log.date || log.createdAt), 'MMM d'),
-      kms: log.kms || log.kilometers || log.reading,
-    }))
+    .map((log) => {
+      let dateLabel;
+      try {
+        dateLabel = format(new Date(log.date || log.loggedAt || log.createdAt), 'MMM d');
+      } catch {
+        dateLabel = 'N/A';
+      }
+      return { date: dateLabel, kms: log.kms || log.kilometers || log.reading };
+    })
     .reverse();
 
   return (

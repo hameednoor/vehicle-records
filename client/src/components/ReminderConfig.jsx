@@ -13,7 +13,7 @@ import {
   ToggleLeft,
   ToggleRight,
 } from 'lucide-react';
-import {
+import api, {
   getVehicleReminders,
   createReminder,
   updateReminder,
@@ -113,8 +113,9 @@ export default function ReminderConfig({ vehicleId }) {
   const handleToggle = async (reminder) => {
     try {
       const id = reminder._id || reminder.id;
+      const isCurrentlyActive = reminder.isActive ?? reminder.is_active ?? true;
       await updateReminder(id, {
-        enabled: !(reminder.enabled ?? true),
+        isActive: !isCurrentlyActive,
       });
       fetchReminders();
     } catch (err) {
@@ -139,9 +140,22 @@ export default function ReminderConfig({ vehicleId }) {
 
   const handleSendTest = async (reminder) => {
     try {
+      const recipients = reminder.recipients || [];
+      const channel = reminder.channel || 'email';
+
+      if (recipients.length === 0 && channel === 'email') {
+        showError('No recipients configured for this reminder');
+        return;
+      }
+
+      await api.post('/reminders/test', {
+        to: recipients[0] || 'whatsapp',
+        type: reminder.type,
+        channel,
+      });
       showSuccess('Test notification sent!');
-    } catch {
-      showError('Failed to send test notification');
+    } catch (err) {
+      showError(err.message || 'Failed to send test notification');
     }
   };
 
@@ -199,7 +213,7 @@ export default function ReminderConfig({ vehicleId }) {
           <div className="space-y-3">
             {reminders.map((reminder) => {
               const id = reminder._id || reminder.id;
-              const enabled = reminder.enabled ?? true;
+              const enabled = reminder.isActive ?? reminder.is_active ?? true;
               const ChannelIcon =
                 channelIcons[reminder.channel] || Mail;
 
