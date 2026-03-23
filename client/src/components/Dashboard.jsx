@@ -5,11 +5,11 @@ import {
   Wrench,
   DollarSign,
   AlertTriangle,
-  Plus,
   Filter,
   ArrowUpDown,
   ChevronRight,
   X,
+  Plus,
 } from 'lucide-react';
 import { getVehicles, getUpcomingMaintenance } from '../api';
 import VehicleCard from './VehicleCard';
@@ -62,15 +62,10 @@ export default function Dashboard() {
       const vid = item.vehicleId || item.vehicle_id;
       if (!vid) return;
       const existing = statusMap[vid];
-      if (item.isOverdue || item.is_overdue) {
+      if (Number(item.isOverdue) === 1 || item.is_overdue === true) {
         statusMap[vid] = 'overdue';
-      } else if (
-        (item.isDueSoon || item.is_due_soon) &&
-        existing !== 'overdue'
-      ) {
+      } else if (existing !== 'overdue') {
         statusMap[vid] = 'due-soon';
-      } else if (!existing) {
-        statusMap[vid] = 'up-to-date';
       }
     });
     return statusMap;
@@ -96,9 +91,7 @@ export default function Dashboard() {
     const totalSpend = vehicleList.reduce((sum, v) => {
       return sum + (v.totalSpend || v.total_spend || 0);
     }, 0);
-    const upcomingDue = Array.isArray(upcoming)
-      ? upcoming.filter((u) => u.isOverdue || u.is_overdue || u.isDueSoon || u.is_due_soon).length
-      : 0;
+    const upcomingDue = Array.isArray(upcoming) ? upcoming.length : 0;
 
     return { totalVehicles, servicesThisMonth, totalSpend, upcomingDue };
   }, [vehicles, upcoming]);
@@ -165,15 +158,9 @@ export default function Dashboard() {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Page header */}
-      <div className="page-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="page-title">Dashboard</h1>
-          <p className="page-subtitle">Overview of your vehicles and maintenance</p>
-        </div>
-        <Link to="/vehicles/new" className="btn-primary">
-          <Plus className="w-4 h-4" />
-          Add Vehicle
-        </Link>
+      <div className="page-header">
+        <h1 className="page-title">Dashboard</h1>
+        <p className="page-subtitle">Overview of your vehicles and maintenance</p>
       </div>
 
       {/* Stats */}
@@ -201,8 +188,8 @@ export default function Dashboard() {
 
       {/* Reminders Section */}
       {!loading && (Array.isArray(upcoming) && upcoming.length > 0) && (() => {
-        const overdue = upcoming.filter(u => u.isOverdue || u.is_overdue);
-        const dueSoon = upcoming.filter(u => (u.isDueSoon || u.is_due_soon) && !(u.isOverdue || u.is_overdue));
+        const overdue = upcoming.filter(u => Number(u.isOverdue) === 1 || u.is_overdue === true);
+        const dueSoon = upcoming.filter(u => !(Number(u.isOverdue) === 1 || u.is_overdue === true));
 
         return (
           <div
@@ -321,7 +308,7 @@ export default function Dashboard() {
                 <p className="text-center text-gray-500 py-12">No upcoming reminders</p>
               ) : (
                 upcoming.map((item, idx) => {
-                  const isOverdue = item.isOverdue || item.is_overdue;
+                  const isOverdue = Number(item.isOverdue) === 1 || item.is_overdue === true;
                   return (
                     <div
                       key={item.id || idx}

@@ -230,11 +230,26 @@ router.post(
         return res.status(404).json({ error: 'Category not found.' });
       }
 
+      // Auto-populate from SERVICE_INTERVALS when user didn't provide values
+      let usedNextDueKms = nextDueKms || null;
+      let usedNextDueDays = nextDueDays || null;
+
+      if (!usedNextDueKms && !usedNextDueDays && category) {
+        const { SERVICE_INTERVALS } = require('../db/seed');
+        const interval = SERVICE_INTERVALS[category.name];
+        if (interval) {
+          if (kmsAtService) {
+            usedNextDueKms = Number(kmsAtService) + interval.kms;
+          }
+          usedNextDueDays = interval.days;
+        }
+      }
+
       // Calculate nextDueDate from nextDueDays if provided and nextDueDate is not
       let calculatedNextDueDate = nextDueDate || null;
-      if (!calculatedNextDueDate && nextDueDays) {
+      if (!calculatedNextDueDate && usedNextDueDays) {
         const serviceDate = new Date(date);
-        serviceDate.setDate(serviceDate.getDate() + parseInt(nextDueDays, 10));
+        serviceDate.setDate(serviceDate.getDate() + parseInt(usedNextDueDays, 10));
         calculatedNextDueDate = serviceDate.toISOString().split('T')[0];
       }
 
@@ -259,8 +274,8 @@ router.post(
         usedCurrency,
         provider || null,
         notes || null,
-        nextDueKms || null,
-        nextDueDays || null,
+        usedNextDueKms,
+        usedNextDueDays,
         calculatedNextDueDate,
         originalCost || null,
         originalCurrency || null,
