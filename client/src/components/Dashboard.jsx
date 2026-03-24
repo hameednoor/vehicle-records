@@ -24,18 +24,16 @@ import { VehicleCardSkeleton, StatCardSkeleton } from './ui/LoadingSkeleton';
 import { showError } from './ui/Toast';
 import { format } from 'date-fns';
 
-// Determine if a reminder item is truly overdue
-// Date takes priority: if the due date is in the future, it's NOT overdue even if KMs are exceeded.
-// Only fall back to KM check when there is no due date.
+// Determine if a reminder item is truly overdue (date in the past or KMs exceeded)
 function isItemOverdue(item) {
   if (item.nextDueDate) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const dueDate = new Date(item.nextDueDate + 'T00:00:00');
-    return dueDate < today;
+    if (dueDate < today) return true;
   }
   if (item.nextDueKms != null && item.currentKms != null) {
-    return Number(item.nextDueKms) <= Number(item.currentKms);
+    if (Number(item.nextDueKms) <= Number(item.currentKms)) return true;
   }
   return false;
 }
