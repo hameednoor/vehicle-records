@@ -109,7 +109,7 @@ export default function Dashboard() {
       return sum + Number(v.servicesThisMonth || 0);
     }, 0);
     const totalSpend = vehicleList.reduce((sum, v) => {
-      return sum + Number(v.totalSpend || v.total_spend || 0);
+      return sum + Math.ceil(Number(v.totalSpend || v.total_spend || 0));
     }, 0);
     const upcomingList = Array.isArray(upcoming) ? upcoming : [];
     const overdueCount = upcomingList.filter(u => isItemOverdue(u)).length;

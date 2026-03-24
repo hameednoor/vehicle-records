@@ -79,7 +79,7 @@ function CustomTooltip({ active, payload, label }) {
       <p className="font-medium text-gray-900 dark:text-gray-50">{label}</p>
       {payload.map((entry, i) => (
         <p key={i} style={{ color: entry.color }} className="mt-1">
-          {entry.name}: AED {Number(entry.value).toLocaleString()}
+          {entry.name}: AED {Math.ceil(Number(entry.value)).toLocaleString()}
         </p>
       ))}
     </div>
@@ -403,7 +403,7 @@ export default function Reports() {
                     <td className="py-2.5 px-3 font-medium text-gray-900 dark:text-gray-100">{v.name}</td>
                     <td className="py-2.5 px-3 text-right text-gray-600 dark:text-gray-400">{v.services}</td>
                     <td className="py-2.5 px-3 text-right text-gray-600 dark:text-gray-400">{Math.round(v.average).toLocaleString()}</td>
-                    <td className="py-2.5 px-3 text-right font-semibold text-gray-900 dark:text-gray-100">{v.total.toLocaleString()}</td>
+                    <td className="py-2.5 px-3 text-right font-semibold text-gray-900 dark:text-gray-100">{Math.ceil(v.total).toLocaleString()}</td>
                     <td className="py-2.5 px-3 text-right text-gray-500 dark:text-gray-400">{v.percentage.toFixed(1)}%</td>
                   </tr>
                 ))}
@@ -464,7 +464,7 @@ export default function Reports() {
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(value) => `AED ${Number(value).toLocaleString()}`}
+                    formatter={(value) => `AED ${Math.ceil(Number(value)).toLocaleString()}`}
                   />
                 </PieChart>
               </ResponsiveContainer>

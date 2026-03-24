@@ -386,14 +386,14 @@ function OverviewTab({ vehicle, stats, kmChartData, vehicleId }) {
   const statCards = [
     {
       label: 'Total Spend (All-time)',
-      value: `AED ${totalSpend.toLocaleString()}`,
+      value: `AED ${Math.ceil(Number(totalSpend)).toLocaleString()}`,
       icon: DollarSign,
       color: 'text-violet-600 dark:text-violet-400',
       bg: 'bg-violet-50 dark:bg-violet-950/50',
     },
     {
       label: 'Last 12 Months',
-      value: `AED ${last12Months.toLocaleString()}`,
+      value: `AED ${Math.ceil(Number(last12Months)).toLocaleString()}`,
       icon: Calendar,
       color: 'text-brand-600 dark:text-brand-400',
       bg: 'bg-brand-50 dark:bg-brand-950/50',

@@ -182,7 +182,7 @@ export default function ServiceForm() {
     getExchangeRate(currency, 'AED', form.date)
       .then((data) => {
         setExchangeRate(data.rate);
-        setConvertedCost((Number(form.cost) * data.rate).toFixed(2));
+        setConvertedCost(Math.ceil(Number(form.cost) * data.rate).toString());
       })
       .catch(() => setConvertedCost(''))
       .finally(() => setLoadingRate(false));

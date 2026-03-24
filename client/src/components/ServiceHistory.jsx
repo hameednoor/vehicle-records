@@ -335,7 +335,7 @@ export default function ServiceHistory({ vehicleId }) {
                         </span>
                         {record.cost > 0 && (
                           <span className="text-sm font-semibold text-brand-700 dark:text-brand-400">
-                            AED {record.cost?.toLocaleString()}
+                            AED {Math.ceil(Number(record.cost || 0)).toLocaleString()}
                           </span>
                         )}
                       </div>
