@@ -1,7 +1,8 @@
 /**
- * Client-side invoice OCR using Tesseract.js loaded from CDN.
- * Uses CDN to avoid Vite bundling issues with the WASM worker.
+ * Client-side invoice OCR using Tesseract.js (npm package).
+ * Worker and WASM files are loaded from CDN at runtime to avoid Vite bundling issues.
  */
+import { createWorker } from 'tesseract.js';
 
 // Currency patterns for detection
 const CURRENCY_MAP = {
@@ -216,45 +217,6 @@ export function parseInvoiceText(text) {
   return { cost: bestCost, currency: detectedCurrency };
 }
 
-// ---------------------------------------------------------------------------
-// Load Tesseract.js from CDN (avoids Vite bundling issues with WASM workers)
-// ---------------------------------------------------------------------------
-let tesseractLoaded = null;
-
-function loadTesseractFromCDN() {
-  if (tesseractLoaded) {
-    return tesseractLoaded;
-  }
-
-  tesseractLoaded = new Promise((resolve, reject) => {
-    // Check if already loaded
-    if (window.Tesseract && window.Tesseract.createWorker) {
-      resolve(window.Tesseract);
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src =
-      'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-    script.async = true;
-    script.onload = () => {
-      if (window.Tesseract && window.Tesseract.createWorker) {
-        console.log('[OCR] Tesseract.js loaded from CDN');
-        resolve(window.Tesseract);
-      } else {
-        reject(new Error('Tesseract.js loaded but createWorker not found'));
-      }
-    };
-    script.onerror = () => {
-      tesseractLoaded = null;
-      reject(new Error('Failed to load Tesseract.js from CDN'));
-    };
-    document.head.appendChild(script);
-  });
-
-  return tesseractLoaded;
-}
-
 /**
  * Run OCR on an image file in the browser using Tesseract.js.
  * Returns { cost, currency, rawText }
@@ -273,10 +235,16 @@ export async function analyzeInvoiceBrowser(file) {
   console.log('[OCR] Starting analysis for:', file.name, 'size:', file.size);
 
   try {
-    const Tesseract = await loadTesseractFromCDN();
-
     console.log('[OCR] Creating worker...');
-    const worker = await Tesseract.createWorker('eng');
+    const worker = await createWorker('eng', 1, {
+      workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+      corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core-simd-lstm.wasm.js',
+      logger: (m) => {
+        if (m.status === 'recognizing text') {
+          console.log('[OCR] Progress:', Math.round((m.progress || 0) * 100) + '%');
+        }
+      },
+    });
 
     console.log('[OCR] Recognizing image...');
     const imageUrl = URL.createObjectURL(file);

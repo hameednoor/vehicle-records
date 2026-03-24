@@ -16,7 +16,7 @@ import VehicleCard from './VehicleCard';
 import KmUpdateModal from './KmUpdateModal';
 import { VehicleCardSkeleton, StatCardSkeleton } from './ui/LoadingSkeleton';
 import { showError } from './ui/Toast';
-import { format, isThisMonth } from 'date-fns';
+import { format } from 'date-fns';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -86,17 +86,7 @@ export default function Dashboard() {
     const vehicleList = Array.isArray(vehicles) ? vehicles : [];
     const totalVehicles = vehicleList.length;
     const servicesThisMonth = vehicleList.reduce((sum, v) => {
-      const services = v.serviceRecords || v.services || [];
-      return (
-        sum +
-        services.filter((s) => {
-          try {
-            return isThisMonth(new Date(s.date || s.serviceDate));
-          } catch {
-            return false;
-          }
-        }).length
-      );
+      return sum + (v.servicesThisMonth || 0);
     }, 0);
     const totalSpend = vehicleList.reduce((sum, v) => {
       return sum + (v.totalSpend || v.total_spend || 0);

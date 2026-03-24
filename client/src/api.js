@@ -122,11 +122,11 @@ export const getServiceRecords = (params) => cachedGet('/service-records', param
 
 export const getServiceRecord = (id) => cachedGet(`/service-records/${id}`);
 
-export const createServiceRecord = (data) => { invalidateCache('/service-records'); return api.post('/service-records', data).then((r) => r.data); };
+export const createServiceRecord = (data) => { invalidateCache('/service-records'); invalidateCache('/vehicles'); return api.post('/service-records', data).then((r) => r.data); };
 
-export const updateServiceRecord = (id, data) => { invalidateCache('/service-records'); return api.put(`/service-records/${id}`, data).then((r) => r.data); };
+export const updateServiceRecord = (id, data) => { invalidateCache('/service-records'); invalidateCache('/vehicles'); return api.put(`/service-records/${id}`, data).then((r) => r.data); };
 
-export const deleteServiceRecord = (id) => { invalidateCache('/service-records'); return api.delete(`/service-records/${id}`).then((r) => r.data); };
+export const deleteServiceRecord = (id) => { invalidateCache('/service-records'); invalidateCache('/vehicles'); return api.delete(`/service-records/${id}`).then((r) => r.data); };
 
 export const getVehicleServiceRecords = (vehicleId, params) =>
   cachedGet(`/service-records/vehicle/${vehicleId}`, params);
@@ -135,7 +135,7 @@ export const getUpcomingMaintenance = () => cachedGet('/service-records/upcoming
 
 // ============ Invoices ============
 export const uploadInvoices = (serviceRecordId, formData) => {
-  invalidateCache('/invoices'); invalidateCache('/service-records');
+  invalidateCache('/invoices'); invalidateCache('/service-records'); invalidateCache('/vehicles');
   return api
     .post(`/invoices/upload/${serviceRecordId}`, formData, {
       headers: { 'Content-Type': undefined },

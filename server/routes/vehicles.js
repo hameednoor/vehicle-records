@@ -3,7 +3,7 @@ const { body, param, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
-const { getDb } = require('../db/database');
+const { getDb, isPostgres } = require('../db/database');
 const { singleUpload, transferToCloud } = require('../middleware/upload');
 const { deleteFile, isCloudStorage, UPLOADS_DIR } = require('../services/storage');
 
@@ -15,6 +15,10 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const db = getDb();
+
+    // Compute date strings for SQL queries (works on both SQLite and PostgreSQL)
+    const now = new Date();
+    const monthStartStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 
     const vehicles = await db.all(
       `SELECT v.*,
@@ -28,7 +32,8 @@ router.get('/', async (req, res) => {
         (SELECT MIN(sr."nextDueKms") FROM service_records sr
          WHERE sr."vehicleId" = v.id AND sr."nextDueKms" IS NOT NULL) as "nextMaintenanceKms",
         (SELECT COUNT(*) FROM service_records sr WHERE sr."vehicleId" = v.id) as "totalServices",
-        (SELECT COALESCE(SUM(sr.cost), 0) FROM service_records sr WHERE sr."vehicleId" = v.id) as "totalSpend"
+        (SELECT COALESCE(SUM(sr.cost), 0) FROM service_records sr WHERE sr."vehicleId" = v.id) as "totalSpend",
+        (SELECT COUNT(*) FROM service_records sr WHERE sr."vehicleId" = v.id AND sr.date >= '${monthStartStr}') as "servicesThisMonth"
        FROM vehicles v
        ORDER BY v."updatedAt" DESC`
     );
@@ -314,10 +319,15 @@ router.get('/:id/stats', async (req, res) => {
       req.params.id
     );
 
+    // Compute 12 months ago in JS to avoid SQLite/PostgreSQL syntax differences
+    const twelveMonthsAgo = new Date();
+    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+    const twelveMonthsAgoStr = twelveMonthsAgo.toISOString().split('T')[0];
+
     const last12Months = await db.get(
       `SELECT COALESCE(SUM(cost), 0) as total FROM service_records
-       WHERE "vehicleId" = ? AND date >= date('now', '-12 months')`,
-      req.params.id
+       WHERE "vehicleId" = ? AND date >= ?`,
+      req.params.id, twelveMonthsAgoStr
     );
 
     res.json({
@@ -326,6 +336,7 @@ router.get('/:id/stats', async (req, res) => {
       totalSpend: totalSpend.total,
       last12Months: last12Months.total,
       serviceCount: serviceCount.count,
+      totalServices: serviceCount.count,
       averageCost: Math.round(avgCost.average * 100) / 100,
       costByCategory,
       recentServices,
