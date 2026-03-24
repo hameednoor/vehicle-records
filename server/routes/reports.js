@@ -311,54 +311,57 @@ router.get('/export/pdf', async (req, res) => {
 
     const today = new Date().toISOString().split('T')[0];
 
-    // Build PDF
+    // Build PDF — portrait A4
     const doc = new PDFDocument({ margin: 40, size: 'A4' });
     const filename = `vehicle-maintenance-report-${today}.pdf`;
-    const pageWidth = doc.page.width;
-    const contentWidth = pageWidth - 80; // 40px margin each side
+    const pageWidth = doc.page.width;   // 595
+    const pageHeight = doc.page.height; // 842
+    const contentWidth = pageWidth - 80; // 515
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     doc.pipe(res);
 
+    // Cell padding inside each column (px on each side)
+    const cellPad = 3;
+
     // ── Helper functions ──
     function drawTableHeader(cols, headers, y, aligns) {
-      doc.rect(40, y, contentWidth, 26).fill('#1B4F72');
-      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(9);
+      doc.rect(40, y, contentWidth, 24).fill('#1B4F72');
+      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(8);
       let x = 45;
       headers.forEach((header, i) => {
         const align = aligns ? aligns[i] : (i === 0 ? 'left' : 'right');
-        doc.text(header, x, y + 7, { width: cols[i], align });
+        doc.text(header, x + cellPad, y + 7, { width: cols[i] - cellPad * 2, align });
         x += cols[i];
       });
-      return y + 26;
+      return y + 24;
     }
 
     function drawTableRow(cols, values, y, striped, aligns) {
       if (striped) {
-        doc.rect(40, y, contentWidth, 22).fill('#F0F4F8');
+        doc.rect(40, y, contentWidth, 20).fill('#F0F4F8');
       }
-      doc.fillColor('#2C3E50').font('Helvetica').fontSize(9);
+      doc.fillColor('#2C3E50').font('Helvetica').fontSize(8);
       let x = 45;
       values.forEach((val, i) => {
         const align = aligns ? aligns[i] : (i === 0 ? 'left' : 'right');
-        doc.text(val, x, y + 6, { width: cols[i], align });
+        doc.text(val, x + cellPad, y + 5, { width: cols[i] - cellPad * 2, align });
         x += cols[i];
       });
-      return y + 22;
+      return y + 20;
     }
 
     function drawSectionTitle(title, y) {
-      if (y > 700) { doc.addPage(); y = 50; }
-      doc.font('Helvetica-Bold').fontSize(15).fillColor('#1B4F72');
+      if (y > pageHeight - 140) { doc.addPage(); y = 50; }
+      doc.font('Helvetica-Bold').fontSize(14).fillColor('#1B4F72');
       doc.text(title, 40, y);
-      // underline
-      doc.moveTo(40, y + 20).lineTo(40 + contentWidth, y + 20).strokeColor('#BDC3C7').lineWidth(0.5).stroke();
-      return y + 30;
+      doc.moveTo(40, y + 18).lineTo(40 + contentWidth, y + 18).strokeColor('#BDC3C7').lineWidth(0.5).stroke();
+      return y + 28;
     }
 
     function checkPage(y, needed) {
-      if (y + needed > 760) { doc.addPage(); return 50; }
+      if (y + needed > pageHeight - 50) { doc.addPage(); return 50; }
       return y;
     }
 
@@ -366,10 +369,10 @@ router.get('/export/pdf', async (req, res) => {
       const pages = doc.bufferedPageRange();
       for (let i = pages.start; i < pages.start + pages.count; i++) {
         doc.switchToPage(i);
-        doc.font('Helvetica').fontSize(8).fillColor('#95A5A6');
+        doc.font('Helvetica').fontSize(7).fillColor('#95A5A6');
         doc.text(
           `Vehicle Maintenance Tracker  |  Generated ${today}  |  Page ${i + 1} of ${pages.count}`,
-          40, doc.page.height - 30,
+          40, pageHeight - 30,
           { align: 'center', width: contentWidth }
         );
       }
@@ -379,13 +382,11 @@ router.get('/export/pdf', async (req, res) => {
     // PAGE 1: HEADER
     // ══════════════════════════════════════════════════════════
 
-    // Dark header band
-    doc.rect(0, 0, pageWidth, 100).fill('#1B4F72');
+    doc.rect(0, 0, pageWidth, 90).fill('#1B4F72');
 
-    doc.font('Helvetica-Bold').fontSize(26).fillColor('#FFFFFF');
-    doc.text('Vehicle Maintenance Report', 40, 25);
+    doc.font('Helvetica-Bold').fontSize(22).fillColor('#FFFFFF');
+    doc.text('Vehicle Maintenance Report', 40, 22);
 
-    // Subtitle line
     let subtitle = 'Report Period: All Time';
     if (startDate && endDate) {
       subtitle = `Report Period: ${startDate} to ${endDate}`;
@@ -394,11 +395,11 @@ router.get('/export/pdf', async (req, res) => {
     } else if (endDate) {
       subtitle = `Report Period: Until ${endDate}`;
     }
-    doc.font('Helvetica').fontSize(12).fillColor('#AED6F1');
-    doc.text(subtitle, 40, 60);
-    doc.text(`Generated: ${today}`, 40, 76);
+    doc.font('Helvetica').fontSize(10).fillColor('#AED6F1');
+    doc.text(subtitle, 40, 52);
+    doc.text(`Generated: ${today}`, 40, 66);
 
-    let y = 120;
+    let y = 108;
 
     // ── Summary boxes ──
     const boxW = (contentWidth - 20) / 3;
@@ -410,25 +411,25 @@ router.get('/export/pdf', async (req, res) => {
 
     boxes.forEach((box, i) => {
       const bx = 40 + i * (boxW + 10);
-      doc.rect(bx, y, boxW, 55).lineWidth(1).strokeColor('#D5D8DC').fillAndStroke('#FAFBFC', '#D5D8DC');
-      doc.font('Helvetica').fontSize(9).fillColor('#7F8C8D');
-      doc.text(box.label, bx + 10, y + 10, { width: boxW - 20 });
-      doc.font('Helvetica-Bold').fontSize(20).fillColor('#1B4F72');
-      doc.text(box.value, bx + 10, y + 28, { width: boxW - 20 });
+      doc.rect(bx, y, boxW, 50).lineWidth(1).strokeColor('#D5D8DC').fillAndStroke('#FAFBFC', '#D5D8DC');
+      doc.font('Helvetica').fontSize(8).fillColor('#7F8C8D');
+      doc.text(box.label, bx + 10, y + 8, { width: boxW - 20 });
+      doc.font('Helvetica-Bold').fontSize(18).fillColor('#1B4F72');
+      doc.text(box.value, bx + 10, y + 25, { width: boxW - 20 });
     });
-    y += 75;
+    y += 68;
 
     // ══════════════════════════════════════════════════════════
     // SECTION 1: COST SUMMARY BY VEHICLE
     // ══════════════════════════════════════════════════════════
     y = drawSectionTitle('Cost Summary by Vehicle', y);
 
-    const sumCols = [145, 55, 70, 85, 85, 55];
+    const sumCols = [148, 50, 72, 82, 92, 56]; // = 500
     const sumAligns = ['left', 'right', 'right', 'right', 'right', 'right'];
-    y = drawTableHeader(sumCols, ['Vehicle', 'Services', `Avg (${currency})`, `Total (${currency})`, 'Last Service', '%'], y, sumAligns);
+    y = drawTableHeader(sumCols, ['Vehicle', 'Svcs', `Avg (${currency})`, `Total (${currency})`, 'Last Service', '%'], y, sumAligns);
 
     vehicleSummary.forEach((v, index) => {
-      y = checkPage(y, 22);
+      y = checkPage(y, 20);
       const totalCost = Number(v.totalCost);
       const svcCount = Number(v.serviceCount);
       const avgCost = svcCount > 0 ? Math.round(totalCost / svcCount) : 0;
@@ -436,22 +437,22 @@ router.get('/export/pdf', async (req, res) => {
       const lastSvc = v.lastService || '-';
 
       y = drawTableRow(sumCols, [
-        truncate(v.vehicleName, 28),
+        truncate(v.vehicleName, 24),
         svcCount.toString(),
         avgCost.toLocaleString(),
         totalCost.toLocaleString(),
         lastSvc,
         `${pct}%`,
-      ], y, index % 2 === 0);
+      ], y, index % 2 === 0, sumAligns);
     });
 
     // Grand total row
-    doc.rect(40, y, contentWidth, 26).fill('#1B4F72');
-    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(11);
-    doc.text('Grand Total', 45, y + 7, { width: sumCols[0] });
-    doc.text(totalServices.toString(), 45 + sumCols[0], y + 7, { width: sumCols[1], align: 'right' });
-    doc.text(grandTotal.toLocaleString(), 45 + sumCols[0] + sumCols[1] + sumCols[2], y + 7, { width: sumCols[3], align: 'right' });
-    y += 40;
+    doc.rect(40, y, contentWidth, 24).fill('#1B4F72');
+    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(9);
+    doc.text('Grand Total', 45 + cellPad, y + 7, { width: sumCols[0] - cellPad * 2 });
+    doc.text(totalServices.toString(), 45 + sumCols[0] + cellPad, y + 7, { width: sumCols[1] - cellPad * 2, align: 'right' });
+    doc.text(grandTotal.toLocaleString(), 45 + sumCols[0] + sumCols[1] + sumCols[2] + cellPad, y + 7, { width: sumCols[3] - cellPad * 2, align: 'right' });
+    y += 38;
 
     // ══════════════════════════════════════════════════════════
     // SECTION 2: COST BY CATEGORY
@@ -460,22 +461,22 @@ router.get('/export/pdf', async (req, res) => {
       y = checkPage(y, 80);
       y = drawSectionTitle('Cost Breakdown by Category', y);
 
-      const catCols = [200, 100, 110, 105];
+      const catCols = [195, 75, 115, 115]; // = 500
       const catAligns = ['left', 'right', 'right', 'right'];
-      y = drawTableHeader(catCols, ['Category', 'Services', `Total (${currency})`, '% of Total'], y, catAligns);
+      y = drawTableHeader(catCols, ['Category', 'Svcs', `Total (${currency})`, '% of Total'], y, catAligns);
 
       categorySummary.forEach((c, index) => {
-        y = checkPage(y, 22);
+        y = checkPage(y, 20);
         const totalCost = Number(c.totalCost);
         const svcCount = Number(c.serviceCount);
         const pct = grandTotal > 0 ? ((totalCost / grandTotal) * 100).toFixed(1) : '0.0';
 
         y = drawTableRow(catCols, [
-          c.categoryName,
+          truncate(c.categoryName, 30),
           svcCount.toString(),
           totalCost.toLocaleString(),
           `${pct}%`,
-        ], y, index % 2 === 0);
+        ], y, index % 2 === 0, catAligns);
       });
       y += 20;
     }
@@ -494,53 +495,53 @@ router.get('/export/pdf', async (req, res) => {
         grouped[r.vehicle].push(r);
       }
 
-      const detailCols = [68, 95, 60, 72, 95, 105];
+      const detailCols = [62, 82, 52, 70, 108, 126]; // = 500
       const detailAligns = ['left', 'left', 'right', 'right', 'left', 'left'];
 
       for (const [vehicleName, vehicleRecords] of Object.entries(grouped)) {
         y = checkPage(y, 60);
 
         // Vehicle sub-header
-        doc.rect(40, y, contentWidth, 22).fill('#2C3E50');
-        doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(11);
+        doc.rect(40, y, contentWidth, 20).fill('#2C3E50');
+        doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(9);
         doc.text(`${vehicleName}  (${vehicleRecords.length} records)`, 45, y + 5);
-        y += 22;
+        y += 20;
 
-        y = drawTableHeader(detailCols, ['Date', 'Category', 'KMs', `Cost (${currency})`, 'Provider', 'Notes / Next Due'], y, detailAligns);
+        y = drawTableHeader(detailCols, ['Date', 'Category', 'KMs', `Cost`, 'Provider', 'Notes / Next Due'], y, detailAligns);
 
         const maxRecords = Math.min(vehicleRecords.length, 50);
         for (let i = 0; i < maxRecords; i++) {
-          y = checkPage(y, 22);
+          y = checkPage(y, 20);
           const r = vehicleRecords[i];
           const cost = r.cost ? Number(r.cost).toLocaleString() : '0';
           let extra = '';
           if (r.nextDueDate) extra = `Due: ${r.nextDueDate}`;
           else if (r.nextDueKms) extra = `Due: ${Number(r.nextDueKms).toLocaleString()} km`;
-          else if (r.notes) extra = truncate(r.notes, 16);
+          else if (r.notes) extra = truncate(r.notes, 20);
           else extra = '-';
 
           y = drawTableRow(detailCols, [
             r.date || '-',
-            truncate(r.category, 16),
+            truncate(r.category, 14),
             r.kms ? Number(r.kms).toLocaleString() : '-',
             cost,
-            truncate(r.provider || '-', 16),
-            truncate(extra, 18),
+            truncate(r.provider || '-', 18),
+            truncate(extra, 20),
           ], y, i % 2 === 0, detailAligns);
         }
 
         if (vehicleRecords.length > maxRecords) {
-          doc.font('Helvetica-Oblique').fontSize(9).fillColor('#7F8C8D');
+          doc.font('Helvetica-Oblique').fontSize(8).fillColor('#7F8C8D');
           doc.text(`... and ${vehicleRecords.length - maxRecords} more records`, 45, y + 4);
-          y += 18;
+          y += 16;
         }
 
         // Vehicle subtotal
         const vehicleTotal = vehicleRecords.reduce((sum, r) => sum + Number(r.cost || 0), 0);
-        doc.rect(40, y, contentWidth, 20).fill('#EBF5FB');
-        doc.fillColor('#1B4F72').font('Helvetica-Bold').fontSize(10);
-        doc.text(`Subtotal: ${currency} ${vehicleTotal.toLocaleString()}`, 45, y + 5, { width: contentWidth - 10, align: 'right' });
-        y += 30;
+        doc.rect(40, y, contentWidth, 18).fill('#EBF5FB');
+        doc.fillColor('#1B4F72').font('Helvetica-Bold').fontSize(8);
+        doc.text(`Subtotal: ${currency} ${vehicleTotal.toLocaleString()}`, 45, y + 4, { width: contentWidth - 10, align: 'right' });
+        y += 28;
       }
     }
 
