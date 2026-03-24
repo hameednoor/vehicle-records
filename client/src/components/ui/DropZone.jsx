@@ -7,8 +7,12 @@ export default function DropZone({
   onFilesSelected,
   maxFiles = 10,
   accept = {
-    'image/*': ['.png', '.jpg', '.jpeg', '.webp'],
+    'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.heic', '.gif', '.bmp', '.tiff'],
     'application/pdf': ['.pdf'],
+    'application/msword': ['.doc'],
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+    'application/vnd.ms-excel': ['.xls'],
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
   },
   files = [],
   onRemove,
@@ -128,7 +132,7 @@ export default function DropZone({
                 {isDragActive ? 'Drop files here' : label}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                PNG, JPG, WEBP, or PDF{maxFiles > 1 ? ` (up to ${maxFiles} files)` : ''}
+                Images, PDF, Word, Excel{maxFiles > 1 ? ` (up to ${maxFiles} files)` : ''}
               </p>
             </div>
           </div>

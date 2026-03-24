@@ -4,7 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
 const { getDb } = require('../db/database');
-const { singleUpload } = require('../middleware/upload');
+const { singleUpload, transferToCloud } = require('../middleware/upload');
 const { deleteFile, isCloudStorage, UPLOADS_DIR } = require('../services/storage');
 
 const router = express.Router();
@@ -194,12 +194,12 @@ router.delete('/:id', async (req, res) => {
     );
 
     for (const invoice of invoices) {
-      await deleteFile('invoices', path.basename(invoice.filePath));
+      await deleteFile('invoices', invoice.filePath);
     }
 
     // Delete vehicle photo
     if (vehicle.photo) {
-      await deleteFile('vehicle-photos', path.basename(vehicle.photo));
+      await deleteFile('vehicle-photos', vehicle.photo);
     }
 
     // CASCADE will handle service_records, invoices, reminder_configs, km_logs
@@ -234,11 +234,12 @@ router.put('/:id/photo', singleUpload, async (req, res) => {
 
     // Delete old photo if it exists
     if (vehicle.photo) {
-      await deleteFile('vehicle-photos', path.basename(vehicle.photo));
+      await deleteFile('vehicle-photos', vehicle.photo);
     }
 
-    // If cloud storage, the middleware already uploaded to Supabase
-    // and req.file.cloudUrl is set. Otherwise use local path.
+    // Transfer to cloud with vehicle name for folder structure
+    await transferToCloud([req.file], 'vehicle-photos', vehicle.name);
+
     const photoPath = req.file.cloudUrl || `/uploads/${req.file.filename}`;
     const now = new Date().toISOString();
 

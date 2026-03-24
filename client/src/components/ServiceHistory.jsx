@@ -21,6 +21,7 @@ import {
   deleteServiceRecord,
   getServiceInvoices,
 } from '../api';
+import InvoiceViewer from './InvoiceViewer';
 import Modal from './ui/Modal';
 import { Skeleton } from './ui/LoadingSkeleton';
 import { showSuccess, showError } from './ui/Toast';
@@ -37,6 +38,10 @@ export default function ServiceHistory({ vehicleId }) {
   const [sortBy, setSortBy] = useState('date-desc');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Invoice viewer state
+  const [viewerInvoices, setViewerInvoices] = useState([]);
+  const [viewerIndex, setViewerIndex] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -123,6 +128,33 @@ export default function ServiceHistory({ vehicleId }) {
       } catch {
         setExpandedInvoices((prev) => ({ ...prev, [recordId]: [] }));
       }
+    }
+  };
+
+  const openInvoiceViewer = (invoiceList, index) => {
+    setViewerInvoices(invoiceList);
+    setViewerIndex(index);
+  };
+
+  const handleInvoiceDeleted = (deletedId) => {
+    // Remove from viewer list
+    const updated = viewerInvoices.filter((inv) => (inv._id || inv.id) !== deletedId);
+    setViewerInvoices(updated);
+
+    // Remove from cached expanded invoices
+    setExpandedInvoices((prev) => {
+      const next = { ...prev };
+      for (const key of Object.keys(next)) {
+        next[key] = next[key].filter((inv) => (inv._id || inv.id) !== deletedId);
+      }
+      return next;
+    });
+
+    // Close viewer if no invoices left
+    if (updated.length === 0) {
+      setViewerIndex(null);
+    } else if (viewerIndex >= updated.length) {
+      setViewerIndex(updated.length - 1);
     }
   };
 
@@ -294,11 +326,14 @@ export default function ServiceHistory({ vehicleId }) {
                         </div>
                       )}
 
-                      {/* Invoice thumbnails */}
+                      {/* Invoice thumbnails - CLICKABLE */}
                       {(invoices.length > 0 || invoiceCount > 0) && (
                         <div>
                           <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
                             Invoices ({invoices.length || invoiceCount})
+                            {invoices.length > 0 && (
+                              <span className="text-gray-400 ml-1">— tap to view</span>
+                            )}
                           </p>
                           <div className="flex gap-2 overflow-x-auto scrollbar-hide">
                             {invoices.length === 0 && invoiceCount > 0 ? (
@@ -313,14 +348,20 @@ export default function ServiceHistory({ vehicleId }) {
                             ) : (
                               invoices.map((inv, i) => {
                                 const invUrl = inv.thumbnailUrl || inv.url || inv.filePath;
+                                const isImage = /\.(jpg|jpeg|png|webp)$/i.test(inv.originalName || '') ||
+                                                (inv.fileType || '').match(/\.(jpg|jpeg|png|webp)$/i);
                                 return (
-                                  <div
+                                  <button
                                     key={inv._id || inv.id || i}
+                                    type="button"
+                                    onClick={() => openInvoiceViewer(invoices, i)}
                                     className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100
                                              dark:bg-gray-800 flex-shrink-0 border border-gray-200
-                                             dark:border-gray-700"
+                                             dark:border-gray-700 hover:border-brand-400
+                                             hover:ring-2 hover:ring-brand-400/50
+                                             transition-all cursor-pointer"
                                   >
-                                    {invUrl ? (
+                                    {invUrl && isImage ? (
                                       <img
                                         src={invUrl}
                                         alt="Invoice"
@@ -334,7 +375,7 @@ export default function ServiceHistory({ vehicleId }) {
                                         <FileText className="w-6 h-6 text-gray-400" />
                                       </div>
                                     )}
-                                  </div>
+                                  </button>
                                 );
                               })
                             )}
@@ -389,6 +430,18 @@ export default function ServiceHistory({ vehicleId }) {
           })}
         </div>
       </div>
+
+      {/* Invoice Viewer Modal */}
+      {viewerIndex !== null && viewerInvoices.length > 0 && (
+        <InvoiceViewer
+          invoice={viewerInvoices[viewerIndex]}
+          invoices={viewerInvoices}
+          currentIndex={viewerIndex}
+          onClose={() => setViewerIndex(null)}
+          onNavigate={(idx) => setViewerIndex(idx)}
+          onDeleted={handleInvoiceDeleted}
+        />
+      )}
 
       {/* Delete confirmation */}
       <Modal

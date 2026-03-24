@@ -1,30 +1,43 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { ThemeProvider } from './context/ThemeContext';
 import Layout from './components/Layout';
-import Dashboard from './components/Dashboard';
-import VehicleDetail from './components/VehicleDetail';
-import VehicleForm from './components/VehicleForm';
-import ServiceForm from './components/ServiceForm';
-import Categories from './components/Categories';
-import Reports from './components/Reports';
-import Settings from './components/Settings';
+
+// Lazy-load route components for faster initial load
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const VehicleDetail = lazy(() => import('./components/VehicleDetail'));
+const VehicleForm = lazy(() => import('./components/VehicleForm'));
+const ServiceForm = lazy(() => import('./components/ServiceForm'));
+const Categories = lazy(() => import('./components/Categories'));
+const Reports = lazy(() => import('./components/Reports'));
+const Settings = lazy(() => import('./components/Settings'));
+
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <div className="w-8 h-8 border-3 border-brand-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
 
 export default function App() {
   return (
     <ThemeProvider>
       <Layout>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/vehicles/new" element={<VehicleForm />} />
-          <Route path="/vehicles/:id" element={<VehicleDetail />} />
-          <Route path="/vehicles/:id/edit" element={<VehicleForm />} />
-          <Route path="/vehicles/:id/service/new" element={<ServiceForm />} />
-          <Route path="/categories" element={<Categories />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/vehicles/new" element={<VehicleForm />} />
+            <Route path="/vehicles/:id" element={<VehicleDetail />} />
+            <Route path="/vehicles/:id/edit" element={<VehicleForm />} />
+            <Route path="/vehicles/:id/service/new" element={<ServiceForm />} />
+            <Route path="/categories" element={<Categories />} />
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </Layout>
       <Toaster
         position="bottom-right"

@@ -81,7 +81,7 @@ function mountRoutes() {
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       database: process.env.DATABASE_URL ? 'postgresql' : 'sqlite',
-      storage: isCloudStorage ? 'supabase' : 'local',
+      storage: isCloudStorage ? 'google-drive' : 'local',
     });
   });
 
@@ -137,7 +137,7 @@ if (!process.env.VERCEL) {
       app.listen(PORT, () => {
         console.log(`Server running on http://localhost:${PORT}`);
         console.log(`CORS enabled for: ${CORS_ORIGIN}`);
-        console.log(`Storage mode: ${isCloudStorage ? 'Supabase Cloud' : 'Local filesystem'}`);
+        console.log(`Storage mode: ${isCloudStorage ? 'Google Drive' : 'Local filesystem'}`);
         console.log(`Database mode: ${process.env.DATABASE_URL ? 'PostgreSQL' : 'SQLite'}`);
         startScheduler(db);
       });

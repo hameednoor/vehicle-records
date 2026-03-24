@@ -95,11 +95,26 @@ export default function InvoiceViewer({
     }
   };
 
-  const imageUrl = invoice.url || invoice.filePath || invoice.fileUrl || invoice.thumbnailUrl;
+  const rawUrl = invoice.url || invoice.filePath || invoice.fileUrl || invoice.thumbnailUrl;
   const isPdf =
     (invoice.fileType || invoice.file_type || '').toLowerCase() === '.pdf' ||
     (invoice.originalName || '').toLowerCase().endsWith('.pdf') ||
-    (imageUrl || '').toLowerCase().endsWith('.pdf');
+    (rawUrl || '').toLowerCase().endsWith('.pdf');
+
+  // Transform Google Drive URLs for proper display
+  const getDisplayUrl = (url, pdf) => {
+    if (!url) return url;
+    const match = url.match(/drive\.google\.com\/uc\?id=([^&]+)/);
+    if (match) {
+      // PDFs need the preview endpoint; images work with uc?id
+      return pdf
+        ? `https://drive.google.com/file/d/${match[1]}/preview`
+        : url;
+    }
+    return url;
+  };
+
+  const imageUrl = getDisplayUrl(rawUrl, isPdf);
   const ocrText = invoice.ocrText || invoice.ocr_text || '';
   const ocrCost = invoice.ocrCost || invoice.ocr_cost;
   const ocrCurrency = invoice.ocrCurrency || invoice.ocr_currency;

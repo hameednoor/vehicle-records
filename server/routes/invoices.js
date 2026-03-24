@@ -3,9 +3,9 @@ const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
 const { getDb } = require('../db/database');
-const { arrayUpload } = require('../middleware/upload');
+const { arrayUpload, transferToCloud } = require('../middleware/upload');
 const { processInvoice, analyzeInvoice, parseInvoiceText } = require('../services/ocr');
-const { deleteFile, isCloudStorage, UPLOADS_DIR } = require('../services/storage');
+const { deleteFile, isCloudStorage, getDrive, extractGoogleDriveFileId, UPLOADS_DIR } = require('../services/storage');
 const { upload } = require('../middleware/upload');
 
 const router = express.Router();
@@ -58,7 +58,6 @@ router.post('/upload/:serviceRecordId', arrayUpload, async (req, res) => {
     );
 
     if (!record) {
-      // Retry after a brief delay (connection pooling can cause momentary invisibility)
       await new Promise((r) => setTimeout(r, 500));
       record = await db.get(
         'SELECT * FROM service_records WHERE id = ?',
@@ -68,7 +67,6 @@ router.post('/upload/:serviceRecordId', arrayUpload, async (req, res) => {
 
     if (!record) {
       console.error(`Invoice upload: service record '${serviceRecordId}' not found in DB`);
-      // Clean up uploaded files
       if (req.files) {
         for (const file of req.files) {
           if (fs.existsSync(file.path)) {
@@ -83,18 +81,50 @@ router.post('/upload/:serviceRecordId', arrayUpload, async (req, res) => {
       return res.status(400).json({ error: 'No files uploaded.' });
     }
 
+    // Look up vehicle name for Google Drive folder structure
+    const vehicle = await db.get(
+      'SELECT name FROM vehicles WHERE id = ?',
+      record.vehicleId
+    );
+    const vehicleName = vehicle?.name || 'General';
+
+    // Run OCR on local temp files BEFORE transferring to cloud
+    const ocrResults = {};
+    for (const file of req.files) {
+      const ext = path.extname(file.originalname).toLowerCase();
+      if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
+        try {
+          const text = await processInvoice(file.path);
+          if (text) {
+            const { cost, currency } = parseInvoiceText(text);
+            ocrResults[file.filename] = { text, cost, currency };
+          }
+        } catch (err) {
+          console.error(`OCR failed for ${file.originalname}:`, err.message);
+        }
+      }
+    }
+
+    // Transfer to Google Drive (or other cloud) with vehicle name
+    await transferToCloud(req.files, 'invoices', vehicleName);
+
     const invoices = [];
 
     for (const file of req.files) {
       const id = uuidv4();
-      // If cloud storage, middleware set cloudUrl; otherwise use local path
       const filePath = file.cloudUrl || `/uploads/${file.filename}`;
       const ext = path.extname(file.originalname).toLowerCase();
+      const ocr = ocrResults[file.filename];
 
       await db.run(
-        `INSERT INTO invoices (id, "serviceRecordId", "filePath", "originalName", "fileType", "ocrProcessed")
-         VALUES (?, ?, ?, ?, ?, 0)`,
-        id, serviceRecordId, filePath, file.originalname, ext
+        `INSERT INTO invoices (id, "serviceRecordId", "filePath", "originalName", "fileType",
+         "ocrProcessed", "ocrText", "ocrCost", "ocrCurrency")
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, serviceRecordId, filePath, file.originalname, ext,
+        1,
+        ocr?.text || null,
+        ocr?.cost || null,
+        ocr?.currency || null
       );
 
       invoices.push({
@@ -103,123 +133,61 @@ router.post('/upload/:serviceRecordId', arrayUpload, async (req, res) => {
         filePath,
         originalName: file.originalname,
         fileType: ext,
-        ocrProcessed: 0,
+        ocrProcessed: 1,
       });
+
+      if (ocr) {
+        console.log(`OCR complete for invoice ${id}: cost=${ocr.cost}, currency=${ocr.currency}`);
+      }
     }
 
-    // Track how many invoices need OCR so we can update the service record
-    // with combined totals after all are processed.
-    let pendingOcr = 0;
-    let completedOcr = 0;
+    // Auto-populate service record cost from OCR if no manual cost
+    try {
+      const currentRecord = await db.get(
+        'SELECT cost, currency FROM service_records WHERE id = ?',
+        serviceRecordId
+      );
 
-    /**
-     * After all invoices in this batch have been OCR-processed,
-     * sum their extracted costs and update the service record
-     * (only if the service record has no manually-entered cost).
-     */
-    async function onAllOcrComplete() {
-      try {
-        // Re-fetch the service record to check current cost
-        const currentRecord = await db.get(
-          'SELECT cost, currency FROM service_records WHERE id = ?',
+      if (currentRecord && (!currentRecord.cost || Number(currentRecord.cost) === 0)) {
+        const costSum = await db.get(
+          `SELECT COALESCE(SUM("ocrCost"), 0) as total FROM invoices
+           WHERE "serviceRecordId" = ? AND "ocrCost" IS NOT NULL AND "ocrCost" > 0`,
           serviceRecordId
         );
 
-        // Only auto-populate if cost is 0 or null (user hasn't manually entered a cost)
-        if (currentRecord && (!currentRecord.cost || Number(currentRecord.cost) === 0)) {
-          // Sum all OCR-extracted costs for invoices in this service record
-          const costSum = await db.get(
-            `SELECT COALESCE(SUM("ocrCost"), 0) as total FROM invoices
-             WHERE "serviceRecordId" = ? AND "ocrCost" IS NOT NULL AND "ocrCost" > 0`,
-            serviceRecordId
-          );
+        const currencyRow = await db.get(
+          `SELECT "ocrCurrency" FROM invoices
+           WHERE "serviceRecordId" = ? AND "ocrCurrency" IS NOT NULL
+           ORDER BY "uploadedAt" ASC LIMIT 1`,
+          serviceRecordId
+        );
 
-          // Use the currency from the first invoice that has one detected
-          const currencyRow = await db.get(
-            `SELECT "ocrCurrency" FROM invoices
-             WHERE "serviceRecordId" = ? AND "ocrCurrency" IS NOT NULL
-             ORDER BY "uploadedAt" ASC LIMIT 1`,
-            serviceRecordId
-          );
+        const totalCost = Number(costSum.total);
+        if (totalCost > 0) {
+          const currency = currencyRow ? currencyRow.ocrCurrency : null;
+          const updateFields = ['cost = ?'];
+          const updateParams = [totalCost];
 
-          const totalCost = Number(costSum.total);
-          if (totalCost > 0) {
-            const currency = currencyRow ? currencyRow.ocrCurrency : null;
-            const updateFields = ['cost = ?'];
-            const updateParams = [totalCost];
-
-            if (currency) {
-              updateFields.push('currency = ?');
-              updateParams.push(currency);
-            }
-
-            updateParams.push(serviceRecordId);
-            await db.run(
-              `UPDATE service_records SET ${updateFields.join(', ')} WHERE id = ?`,
-              ...updateParams
-            );
-            console.log(`Auto-populated service record ${serviceRecordId}: cost=${totalCost}, currency=${currency || 'unchanged'}`);
+          if (currency) {
+            updateFields.push('currency = ?');
+            updateParams.push(currency);
           }
+
+          updateParams.push(serviceRecordId);
+          await db.run(
+            `UPDATE service_records SET ${updateFields.join(', ')} WHERE id = ?`,
+            ...updateParams
+          );
+          console.log(`Auto-populated service record ${serviceRecordId}: cost=${totalCost}, currency=${currency || 'unchanged'}`);
         }
-      } catch (err) {
-        console.error(`Failed to update service record with combined invoice costs:`, err.message);
       }
+    } catch (err) {
+      console.error('Failed to update service record with combined invoice costs:', err.message);
     }
 
-    // Trigger OCR processing in the background for each uploaded file
-    for (const invoice of invoices) {
-      // For OCR we need the local file path. If cloud storage, the temp file
-      // may have been removed by middleware, so skip OCR in that case.
-      const localPath = isCloudStorage
-        ? null
-        : path.join(UPLOADS_DIR, path.basename(invoice.filePath));
-
-      if (localPath) {
-        pendingOcr++;
-        processInvoice(localPath)
-          .then(async (text) => {
-            if (text !== null) {
-              // Parse the OCR text to extract cost and currency
-              const { cost, currency } = parseInvoiceText(text);
-
-              await db.run(
-                `UPDATE invoices SET "ocrText" = ?, "ocrProcessed" = 1,
-                 "ocrCost" = ?, "ocrCurrency" = ? WHERE id = ?`,
-                text, cost, currency, invoice.id
-              );
-              console.log(`OCR complete for invoice ${invoice.id}: cost=${cost}, currency=${currency}`);
-            } else {
-              await db.run(
-                'UPDATE invoices SET "ocrProcessed" = 1 WHERE id = ?',
-                invoice.id
-              );
-            }
-          })
-          .catch(async (err) => {
-            console.error(`OCR failed for invoice ${invoice.id}:`, err.message);
-            await db.run(
-              'UPDATE invoices SET "ocrProcessed" = 1 WHERE id = ?',
-              invoice.id
-            );
-          })
-          .finally(async () => {
-            completedOcr++;
-            if (completedOcr >= pendingOcr) {
-              await onAllOcrComplete();
-            }
-          });
-      } else {
-        // Mark as processed (no local file for OCR)
-        db.run(
-          'UPDATE invoices SET "ocrProcessed" = 1 WHERE id = ?',
-          invoice.id
-        ).catch(() => {});
-      }
-    }
-
-    // If no invoices needed OCR (e.g., all PDFs), still respond immediately
+    const ocrCount = Object.keys(ocrResults).length;
     res.status(201).json({
-      message: `${invoices.length} invoice(s) uploaded successfully.${pendingOcr > 0 ? ' OCR processing started - cost will be auto-populated.' : ''}`,
+      message: `${invoices.length} invoice(s) uploaded successfully.${ocrCount > 0 ? ` OCR extracted cost from ${ocrCount} file(s).` : ''}`,
       invoices,
     });
   } catch (error) {
@@ -230,7 +198,6 @@ router.post('/upload/:serviceRecordId', arrayUpload, async (req, res) => {
 
 /**
  * GET /search - Full-text search across OCR text.
- * Query params: q (search query)
  */
 router.get('/search', async (req, res) => {
   try {
@@ -288,6 +255,7 @@ router.get('/service/:serviceRecordId', async (req, res) => {
 
 /**
  * GET /:id/download - Download the original invoice file.
+ * For Google Drive: streams file via Drive API to avoid CORS/interstitial issues.
  */
 router.get('/:id/download', async (req, res) => {
   try {
@@ -299,7 +267,21 @@ router.get('/:id/download', async (req, res) => {
     }
 
     if (isCloudStorage) {
-      // For cloud storage, redirect to the public URL
+      const fileId = extractGoogleDriveFileId(invoice.filePath);
+      if (fileId) {
+        const drive = getDrive();
+        const response = await drive.files.get(
+          { fileId, alt: 'media' },
+          { responseType: 'stream' }
+        );
+        res.setHeader('Content-Disposition', `attachment; filename="${invoice.originalName || 'invoice'}"`);
+        if (response.headers['content-type']) {
+          res.setHeader('Content-Type', response.headers['content-type']);
+        }
+        response.data.pipe(res);
+        return;
+      }
+      // Fallback: redirect to stored URL
       return res.redirect(invoice.filePath);
     }
 
@@ -337,7 +319,6 @@ router.get('/:id', async (req, res) => {
 
 /**
  * DELETE /:id - Delete an invoice and its file.
- * After deletion, recalculates the service record cost from remaining invoices.
  */
 router.delete('/:id', async (req, res) => {
   try {
@@ -350,12 +331,12 @@ router.delete('/:id', async (req, res) => {
 
     const serviceRecordId = invoice.serviceRecordId;
 
-    // Delete file from storage
-    await deleteFile('invoices', path.basename(invoice.filePath));
+    // Delete file from storage (pass full URL for Google Drive)
+    await deleteFile('invoices', invoice.filePath);
 
     await db.run('DELETE FROM invoices WHERE id = ?', req.params.id);
 
-    // Recalculate service record cost from remaining invoices with OCR data
+    // Recalculate service record cost from remaining invoices
     try {
       const remaining = await db.all(
         'SELECT "ocrCost" FROM invoices WHERE "serviceRecordId" = ? AND "ocrCost" IS NOT NULL AND "ocrCost" > 0',

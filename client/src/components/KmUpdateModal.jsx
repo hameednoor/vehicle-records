@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { Gauge, Save, Camera, Upload, Keyboard, X, Loader2, ScanLine, RotateCcw } from 'lucide-react';
-import { createWorker } from 'tesseract.js';
+// Dynamically import tesseract.js only when needed (large ~15MB library)
+const loadTesseract = () => import('tesseract.js').then((m) => m.createWorker);
 import { updateKms } from '../api';
 import Modal from './ui/Modal';
 import { showSuccess, showError } from './ui/Toast';
@@ -174,6 +175,7 @@ export default function KmUpdateModal({ vehicle, onClose, onUpdated }) {
         for (const pass of passes) {
           setOcrProgress(pass.label);
           try {
+            const createWorker = await loadTesseract();
             const worker = await createWorker('eng', 1); // OEM 1 = LSTM only
             await worker.setParameters({
               tessedit_char_whitelist: '0123456789 .,',

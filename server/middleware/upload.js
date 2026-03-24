@@ -19,10 +19,20 @@ const ALLOWED_MIMETYPES = [
   'image/png',
   'image/heic',
   'image/webp',
+  'image/gif',
+  'image/bmp',
+  'image/tiff',
   'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 ];
 
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.heic', '.webp', '.pdf'];
+const ALLOWED_EXTENSIONS = [
+  '.jpg', '.jpeg', '.png', '.heic', '.webp', '.gif', '.bmp', '.tiff',
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx',
+];
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
@@ -59,22 +69,21 @@ const upload = multer({
   },
 });
 
-// Raw multer middleware
-const rawSingleUpload = upload.single('photo');
-const rawArrayUpload = upload.array('invoices', 10);
-
 /**
- * After multer writes to disk, if cloud storage is enabled,
- * upload the file(s) to Supabase and set cloudUrl on each file object.
- * Then delete the local temp file.
+ * After multer writes to disk, upload file(s) to cloud storage.
+ * Sets cloudUrl on each file object, then deletes the local temp file.
+ *
+ * @param {Array} files - multer file objects
+ * @param {string} bucket - 'invoices' or 'vehicle-photos'
+ * @param {string} [vehicleName] - vehicle name for folder structure
  */
-async function transferToCloud(files, bucket) {
+async function transferToCloud(files, bucket, vehicleName) {
   if (!isCloudStorage || !files || files.length === 0) return;
 
   for (const file of files) {
     try {
       const buffer = fs.readFileSync(file.path);
-      const cloudUrl = await uploadFile(bucket, file.filename, buffer, file.mimetype);
+      const cloudUrl = await uploadFile(bucket, file.filename, buffer, file.mimetype, { vehicleName });
       file.cloudUrl = cloudUrl;
       // Remove local temp file
       if (fs.existsSync(file.path)) {
@@ -87,9 +96,9 @@ async function transferToCloud(files, bucket) {
   }
 }
 
-// Middleware for single file upload (vehicle photo) with cloud transfer
+// Middleware wrappers that handle multer errors (no auto cloud transfer)
 function singleUploadMiddleware(req, res, next) {
-  rawSingleUpload(req, res, async (err) => {
+  upload.single('photo')(req, res, (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ error: 'File size exceeds the 10MB limit.' });
@@ -102,19 +111,12 @@ function singleUploadMiddleware(req, res, next) {
     if (err) {
       return res.status(400).json({ error: err.message });
     }
-
-    // Transfer to cloud if applicable
-    if (req.file) {
-      await transferToCloud([req.file], 'vehicle-photos');
-    }
-
     next();
   });
 }
 
-// Middleware for multiple file upload (invoices) with cloud transfer
 function arrayUploadMiddleware(req, res, next) {
-  rawArrayUpload(req, res, async (err) => {
+  upload.array('invoices', 10)(req, res, (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ error: 'File size exceeds the 10MB limit.' });
@@ -127,12 +129,6 @@ function arrayUploadMiddleware(req, res, next) {
     if (err) {
       return res.status(400).json({ error: err.message });
     }
-
-    // Transfer to cloud if applicable
-    if (req.files && req.files.length > 0) {
-      await transferToCloud(req.files, 'invoices');
-    }
-
     next();
   });
 }
@@ -141,5 +137,6 @@ module.exports = {
   upload,
   singleUpload: singleUploadMiddleware,
   arrayUpload: arrayUploadMiddleware,
+  transferToCloud,
   UPLOADS_DIR,
 };

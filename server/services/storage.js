@@ -1,113 +1,228 @@
 /**
  * File storage abstraction.
  *
- * When SUPABASE_URL is set  -> uses Supabase Storage (cloud)
- * When it is not            -> uses local filesystem (server/uploads/)
+ * When GOOGLE_SERVICE_ACCOUNT_EMAIL is set -> uses Google Drive
+ * When it is not                          -> uses local filesystem (server/uploads/)
+ *
+ * Folder structure on Google Drive:
+ *   Vehicle Records/
+ *     <Vehicle Name>/
+ *       invoices/
+ *       photos/
  *
  * Exported interface:
- *   uploadFile(bucket, filePath, buffer, mimetype)  -> URL string
- *   deleteFile(bucket, filePath)                    -> void
- *   getFileUrl(bucket, filePath)                    -> URL string
- *   isCloudStorage                                  -> boolean
+ *   uploadFile(bucket, filePath, buffer, mimetype, options)  -> URL string
+ *   deleteFile(bucket, filePath)                             -> void
+ *   getFileUrl(bucket, filePath)                             -> URL string
+ *   ensureBuckets()                                          -> void
+ *   isCloudStorage                                           -> boolean
+ *   getDrive()                                               -> Google Drive client
+ *   extractGoogleDriveFileId(url)                            -> string | null
  */
 
 const fs = require('fs');
 const path = require('path');
+const { Readable } = require('stream');
 
 const UPLOADS_DIR = process.env.VERCEL
   ? '/tmp/uploads'
   : path.join(__dirname, '..', 'uploads');
-const isCloudStorage = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY);
+
+const isCloudStorage = !!(
+  process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY
+);
+
+// ---------------------------------------------------------------------------
+// Google Drive client (lazy-initialized, cached across warm invocations)
+// ---------------------------------------------------------------------------
+
+let driveClient = null;
+
+function getDrive() {
+  if (driveClient) return driveClient;
+  const { google } = require('googleapis');
+  const auth = new google.auth.GoogleAuth({
+    credentials: {
+      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      private_key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+    },
+    scopes: ['https://www.googleapis.com/auth/drive'],
+  });
+  driveClient = google.drive({ version: 'v3', auth });
+  return driveClient;
+}
+
+// ---------------------------------------------------------------------------
+// Folder management
+// ---------------------------------------------------------------------------
+
+let rootFolderId = null;
+const folderCache = new Map(); // "vehicleName/subfolder" -> folderId
 
 /**
- * Extract the filename from a file path or a full URL.
- * Handles cloud URLs like "https://xxx.supabase.co/storage/v1/object/public/invoices/abc.jpg?token=..."
- * as well as local paths and simple filenames.
+ * Find a folder by name under a parent, or create it.
  */
+async function findOrCreateFolder(name, parentId) {
+  const drive = getDrive();
+  const q = `name='${name.replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const res = await drive.files.list({ q, fields: 'files(id, name)', pageSize: 1 });
+
+  if (res.data.files && res.data.files.length > 0) {
+    return res.data.files[0].id;
+  }
+
+  const folder = await drive.files.create({
+    requestBody: {
+      name,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parentId],
+    },
+    fields: 'id',
+  });
+  return folder.data.id;
+}
+
+/**
+ * Ensure root "Vehicle Records" folder exists.
+ */
+async function ensureRootFolder() {
+  if (rootFolderId) return rootFolderId;
+
+  if (process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID) {
+    rootFolderId = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
+    return rootFolderId;
+  }
+
+  // Search in the service account's Drive root
+  const drive = getDrive();
+  const q = `name='Vehicle Records' and 'root' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const res = await drive.files.list({ q, fields: 'files(id)', pageSize: 1 });
+
+  if (res.data.files && res.data.files.length > 0) {
+    rootFolderId = res.data.files[0].id;
+  } else {
+    const folder = await drive.files.create({
+      requestBody: {
+        name: 'Vehicle Records',
+        mimeType: 'application/vnd.google-apps.folder',
+      },
+      fields: 'id',
+    });
+    rootFolderId = folder.data.id;
+    console.log(`Created Google Drive root folder: Vehicle Records (${rootFolderId})`);
+  }
+
+  return rootFolderId;
+}
+
+/**
+ * Get or create: Vehicle Records / <vehicleName> / <subfolder>
+ * subfolder = "invoices" or "photos"
+ */
+async function getOrCreateVehicleSubfolder(vehicleName, subfolder) {
+  const cacheKey = `${vehicleName}/${subfolder}`;
+  if (folderCache.has(cacheKey)) return folderCache.get(cacheKey);
+
+  const root = await ensureRootFolder();
+  const vehicleFolderId = await findOrCreateFolder(vehicleName, root);
+  const subFolderId = await findOrCreateFolder(subfolder, vehicleFolderId);
+
+  folderCache.set(cacheKey, subFolderId);
+  return subFolderId;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 function extractFilename(filePath) {
   if (!filePath) return '';
   try {
-    // If it looks like a URL, parse it properly to strip query params
     if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
       const url = new URL(filePath);
       return path.basename(url.pathname);
     }
   } catch (_) {
-    // Fall through to path.basename
+    // Fall through
   }
   return path.basename(filePath);
 }
 
-let supabase = null;
+/**
+ * Extract Google Drive file ID from a stored URL.
+ * Supports: https://drive.google.com/uc?id=FILE_ID
+ *           https://drive.google.com/file/d/FILE_ID/...
+ *           gdrive:FILE_ID
+ */
+function extractGoogleDriveFileId(url) {
+  if (!url) return null;
+  if (url.startsWith('gdrive:')) return url.slice(7);
 
-function getSupabase() {
-  if (supabase) return supabase;
-  const { createClient } = require('@supabase/supabase-js');
-  supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY
-  );
-  return supabase;
+  const ucMatch = url.match(/drive\.google\.com\/uc\?id=([^&]+)/);
+  if (ucMatch) return ucMatch[1];
+
+  const fileMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+  if (fileMatch) return fileMatch[1];
+
+  return null;
 }
 
+// ---------------------------------------------------------------------------
+// Storage operations
+// ---------------------------------------------------------------------------
+
 /**
- * Ensure Supabase Storage buckets exist.
+ * Ensure storage is ready (create root folder on Google Drive).
  */
 async function ensureBuckets() {
   if (!isCloudStorage) return;
 
-  const client = getSupabase();
-  const buckets = ['invoices', 'vehicle-photos'];
-
-  for (const bucket of buckets) {
-    try {
-      const { data, error } = await client.storage.getBucket(bucket);
-      if (error) {
-        if (error.message && error.message.includes('not found')) {
-          const { error: createErr } = await client.storage.createBucket(bucket, {
-            public: true,
-            fileSizeLimit: 10 * 1024 * 1024, // 10MB
-          });
-          if (createErr) {
-            console.error(`Failed to create bucket "${bucket}":`, createErr.message);
-          } else {
-            console.log(`Created storage bucket: ${bucket}`);
-          }
-        } else {
-          console.error(`Error checking bucket "${bucket}":`, error.message);
-        }
-      }
-    } catch (err) {
-      console.error(`Exception checking/creating bucket "${bucket}":`, err.message);
-    }
+  try {
+    await ensureRootFolder();
+    console.log('Google Drive storage ready.');
+  } catch (err) {
+    console.error('Failed to initialize Google Drive storage:', err.message);
   }
 }
 
 /**
  * Upload a file.
  *
- * @param {string} bucket - Bucket name (e.g. 'invoices', 'vehicle-photos')
- * @param {string} filePath - The path/key within the bucket (e.g. 'abc-123.jpg')
+ * @param {string} bucket - 'invoices' or 'vehicle-photos'
+ * @param {string} filePath - Filename (e.g. 'abc-123.jpg')
  * @param {Buffer} buffer - File contents
  * @param {string} mimetype - MIME type
+ * @param {object} [options] - { vehicleName: string }
  * @returns {Promise<string>} Public URL or local path
  */
-async function uploadFile(bucket, filePath, buffer, mimetype) {
+async function uploadFile(bucket, filePath, buffer, mimetype, options) {
   if (isCloudStorage) {
-    const client = getSupabase();
-    const { error } = await client.storage
-      .from(bucket)
-      .upload(filePath, buffer, {
-        contentType: mimetype,
-        upsert: true,
-      });
+    const drive = getDrive();
+    const vehicleName = options?.vehicleName || 'General';
+    const subfolder = bucket === 'vehicle-photos' ? 'photos' : 'invoices';
+    const parentId = await getOrCreateVehicleSubfolder(vehicleName, subfolder);
 
-    if (error) {
-      throw new Error(`Supabase upload failed: ${error.message}`);
-    }
+    const file = await drive.files.create({
+      requestBody: {
+        name: filePath,
+        parents: [parentId],
+      },
+      media: {
+        mimeType: mimetype,
+        body: Readable.from(buffer),
+      },
+      fields: 'id',
+    });
 
-    const { data: urlData } = client.storage.from(bucket).getPublicUrl(filePath);
-    return urlData.publicUrl;
+    const fileId = file.data.id;
+
+    // Make publicly readable
+    await drive.permissions.create({
+      fileId,
+      requestBody: { role: 'reader', type: 'anyone' },
+    });
+
+    return `https://drive.google.com/uc?id=${fileId}`;
   }
 
   // Local storage
@@ -119,25 +234,26 @@ async function uploadFile(bucket, filePath, buffer, mimetype) {
 
 /**
  * Delete a file.
- *
- * @param {string} bucket - Bucket name
- * @param {string} filePath - The path/key within the bucket
  */
 async function deleteFile(bucket, filePath) {
   if (!filePath) return;
 
   if (isCloudStorage) {
-    const client = getSupabase();
-    // Ensure we pass just the filename/key, not a full URL
-    const key = extractFilename(filePath);
-    const { error } = await client.storage.from(bucket).remove([key]);
-    if (error) {
-      console.error(`Supabase delete failed: ${error.message}`);
+    const fileId = extractGoogleDriveFileId(filePath);
+    if (!fileId) {
+      console.warn(`Could not extract Google Drive file ID from: ${filePath}`);
+      return;
+    }
+    try {
+      const drive = getDrive();
+      await drive.files.delete({ fileId });
+    } catch (err) {
+      console.error(`Google Drive delete failed for ${fileId}:`, err.message);
     }
     return;
   }
 
-  // Local storage - skip if filePath is a cloud URL (e.g. leftover from cloud config)
+  // Local storage
   if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
     console.warn(`Skipping local delete for cloud URL: ${filePath}`);
     return;
@@ -152,18 +268,13 @@ async function deleteFile(bucket, filePath) {
 
 /**
  * Get a file's URL.
- *
- * @param {string} bucket - Bucket name
- * @param {string} filePath - The path/key within the bucket
- * @returns {Promise<string>} URL
  */
 async function getFileUrl(bucket, filePath) {
   if (isCloudStorage) {
-    const client = getSupabase();
-    const { data } = client.storage.from(bucket).getPublicUrl(filePath);
-    return data.publicUrl;
+    // filePath is already a full Google Drive URL
+    if (filePath && filePath.startsWith('https://')) return filePath;
+    return filePath;
   }
-
   return `/uploads/${extractFilename(filePath)}`;
 }
 
@@ -174,5 +285,7 @@ module.exports = {
   isCloudStorage,
   ensureBuckets,
   extractFilename,
+  extractGoogleDriveFileId,
+  getDrive,
   UPLOADS_DIR,
 };
