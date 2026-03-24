@@ -498,7 +498,7 @@ export default function ServiceHistory({ vehicleId }) {
 
                       {/* Next due info */}
                       {(record.nextDueKms != null ||
-                        record.nextDueDays != null) && (
+                        record.nextDueDate != null) && (
                         <div className="bg-amber-50 dark:bg-amber-950/30 rounded-lg p-3">
                           <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1">
                             Next Service Due
@@ -510,9 +510,23 @@ export default function ServiceHistory({ vehicleId }) {
                                 {Number(record.nextDueKms).toLocaleString()} km
                               </span>
                             )}
-                            {record.nextDueDate && (
-                              <span>By {record.nextDueDate}</span>
-                            )}
+                            {record.nextDueDate && (() => {
+                              const today = new Date();
+                              today.setHours(0, 0, 0, 0);
+                              const target = new Date(record.nextDueDate + 'T00:00:00');
+                              const daysLeft = Math.round((target - today) / (1000 * 60 * 60 * 24));
+                              const isOverdue = daysLeft < 0;
+                              return (
+                                <span className={isOverdue ? 'text-red-600 dark:text-red-400 font-semibold' : ''}>
+                                  {record.nextDueDate}
+                                  {isOverdue
+                                    ? ` (${Math.abs(daysLeft)} days overdue)`
+                                    : daysLeft === 0
+                                    ? ' (due today)'
+                                    : ` (${daysLeft} days left)`}
+                                </span>
+                              );
+                            })()}
                           </div>
                         </div>
                       )}

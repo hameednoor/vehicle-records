@@ -96,7 +96,19 @@ export default function ServiceForm() {
     provider: editRecord?.provider || '',
     notes: editRecord?.notes || '',
     nextDueKms: editRecord?.nextDueKms || editRecord?.next_due_kms || '',
-    nextDueDays: editRecord?.nextDueDays || editRecord?.next_due_days || '',
+    nextDueDays: (() => {
+      // Recalculate days from stored date relative to today
+      const storedDate = editRecord?.nextDueDate || editRecord?.next_due_date;
+      if (storedDate) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const target = new Date(storedDate + 'T00:00:00');
+        const diff = Math.round((target - today) / (1000 * 60 * 60 * 24));
+        return diff > 0 ? diff : 0;
+      }
+      return editRecord?.nextDueDays || editRecord?.next_due_days || '';
+    })(),
+    nextDueDate: editRecord?.nextDueDate || editRecord?.next_due_date || '',
   });
 
   useEffect(() => {
@@ -196,7 +208,30 @@ export default function ServiceForm() {
   };
 
   const handleChange = (field, value) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm((prev) => {
+      const updated = { ...prev, [field]: value };
+
+      // Auto-calculate: date <-> days
+      if (field === 'nextDueDate' && value) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const target = new Date(value + 'T00:00:00');
+        const diffMs = target - today;
+        const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+        updated.nextDueDays = diffDays > 0 ? diffDays : '';
+      } else if (field === 'nextDueDays' && value) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        today.setDate(today.getDate() + parseInt(value, 10));
+        updated.nextDueDate = format(today, 'yyyy-MM-dd');
+      } else if (field === 'nextDueDate' && !value) {
+        updated.nextDueDays = '';
+      } else if (field === 'nextDueDays' && !value) {
+        updated.nextDueDate = '';
+      }
+
+      return updated;
+    });
   };
 
   const handleAddCategory = async () => {
@@ -368,6 +403,7 @@ export default function ServiceForm() {
         notes: form.notes || null,
         nextDueKms: form.nextDueKms ? Number(form.nextDueKms) : null,
         nextDueDays: form.nextDueDays ? Number(form.nextDueDays) : null,
+        nextDueDate: form.nextDueDate || null,
       };
 
       let recordId;
@@ -757,7 +793,7 @@ export default function ServiceForm() {
           <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">
             Next Service Due (Optional)
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="label" htmlFor="nextKms">
                 Next Due at KMs
@@ -776,6 +812,22 @@ export default function ServiceForm() {
               </p>
             </div>
             <div>
+              <label className="label" htmlFor="nextDueDate">
+                Due Date
+              </label>
+              <input
+                id="nextDueDate"
+                type="date"
+                className="input"
+                value={form.nextDueDate}
+                onChange={(e) => handleChange('nextDueDate', e.target.value)}
+                min={format(new Date(), 'yyyy-MM-dd')}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Pick a date — days will auto-calculate
+              </p>
+            </div>
+            <div>
               <label className="label" htmlFor="nextDays">
                 Due in Days
               </label>
@@ -789,7 +841,7 @@ export default function ServiceForm() {
                 min="0"
               />
               <p className="text-xs text-gray-500 mt-1">
-                Days from now until next service
+                Enter days — date will auto-calculate
               </p>
             </div>
           </div>
