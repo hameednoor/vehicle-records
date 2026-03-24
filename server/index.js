@@ -130,6 +130,7 @@ function mountRoutes() {
       googleDriveConfigured: !!(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY),
       googleServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || 'NOT SET',
       geminiConfigured: !!process.env.GEMINI_API_KEY,
+      googleDriveRootFolderId: process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || 'NOT SET',
     };
 
     // Test Google Drive connection if configured
