@@ -354,46 +354,64 @@ export default function Reports() {
         )}
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Cost by Vehicle - Bar Chart */}
-        <div className="card p-4 sm:p-6">
-          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">
-            Cost by Vehicle
-          </h3>
-          {loading ? (
-            <Skeleton className="h-64 w-full rounded-lg" />
-          ) : costByVehicle.length === 0 ? (
-            <div className="h-64 flex items-center justify-center text-sm text-gray-400">
-              No data available
-            </div>
-          ) : (
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={costByVehicle}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis
-                    dataKey="name"
-                    tick={{ fontSize: 11 }}
-                    interval={0}
-                    angle={-15}
-                    textAnchor="end"
-                    height={50}
-                  />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar
-                    dataKey="total"
-                    name="Total Cost"
-                    fill="#1B4F72"
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
+      {/* Cost by Vehicle - Table */}
+      <div className="card p-4 sm:p-6">
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">
+          Cost by Vehicle
+        </h3>
+        {loading ? (
+          <Skeleton className="h-48 w-full rounded-lg" />
+        ) : costByVehicle.length === 0 ? (
+          <div className="h-32 flex items-center justify-center text-sm text-gray-400">
+            No data available
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-gray-700">
+                  <th className="text-left py-2.5 px-3 font-semibold text-gray-600 dark:text-gray-400">Vehicle</th>
+                  <th className="text-right py-2.5 px-3 font-semibold text-gray-600 dark:text-gray-400">Services</th>
+                  <th className="text-right py-2.5 px-3 font-semibold text-gray-600 dark:text-gray-400">Avg (AED)</th>
+                  <th className="text-right py-2.5 px-3 font-semibold text-gray-600 dark:text-gray-400">Total (AED)</th>
+                  <th className="text-right py-2.5 px-3 font-semibold text-gray-600 dark:text-gray-400">%</th>
+                </tr>
+              </thead>
+              <tbody>
+                {costByVehicle.map((v, i) => (
+                  <tr
+                    key={i}
+                    className={`border-b border-gray-100 dark:border-gray-800 ${
+                      i % 2 === 0 ? 'bg-gray-50/50 dark:bg-gray-800/30' : ''
+                    }`}
+                  >
+                    <td className="py-2.5 px-3 font-medium text-gray-900 dark:text-gray-100">{v.name}</td>
+                    <td className="py-2.5 px-3 text-right text-gray-600 dark:text-gray-400">{v.services}</td>
+                    <td className="py-2.5 px-3 text-right text-gray-600 dark:text-gray-400">{Math.round(v.average).toLocaleString()}</td>
+                    <td className="py-2.5 px-3 text-right font-semibold text-gray-900 dark:text-gray-100">{v.total.toLocaleString()}</td>
+                    <td className="py-2.5 px-3 text-right text-gray-500 dark:text-gray-400">{v.percentage.toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-brand-700 dark:border-brand-500">
+                  <td className="py-2.5 px-3 font-bold text-brand-700 dark:text-brand-400">Grand Total</td>
+                  <td className="py-2.5 px-3 text-right font-bold text-brand-700 dark:text-brand-400">
+                    {costByVehicle.reduce((s, v) => s + v.services, 0)}
+                  </td>
+                  <td className="py-2.5 px-3"></td>
+                  <td className="py-2.5 px-3 text-right font-bold text-brand-700 dark:text-brand-400">
+                    {totalSpend.toLocaleString()}
+                  </td>
+                  <td className="py-2.5 px-3"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Cost by Category - Pie Chart */}
         <div className="card p-4 sm:p-6">
           <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">
@@ -456,41 +474,37 @@ export default function Reports() {
             </div>
           )}
         </div>
-      </div>
 
-      {/* Monthly Trends - Line Chart */}
-      <div className="card p-4 sm:p-6">
-        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">
-          Monthly Spend Trend
-        </h3>
-        {loading ? (
-          <Skeleton className="h-72 w-full rounded-lg" />
-        ) : monthlyTrends.length === 0 ? (
-          <div className="h-72 flex items-center justify-center text-sm text-gray-400">
-            No data available
-          </div>
-        ) : (
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={monthlyTrends}>
-                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="total"
-                  name="Spend"
-                  stroke="#1B4F72"
-                  strokeWidth={2}
-                  dot={{ fill: '#1B4F72', r: 4 }}
-                  activeDot={{ r: 6 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
+        {/* Monthly Spend - Bar Chart (last 12 months) */}
+        <div className="card p-4 sm:p-6">
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">
+            Monthly Spend (Last 12 Months)
+          </h3>
+          {loading ? (
+            <Skeleton className="h-64 w-full rounded-lg" />
+          ) : monthlyTrends.length === 0 ? (
+            <div className="h-64 flex items-center justify-center text-sm text-gray-400">
+              No data available
+            </div>
+          ) : (
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyTrends.slice(-12)}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={50} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Bar
+                    dataKey="total"
+                    name="Spend"
+                    fill="#1B4F72"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
