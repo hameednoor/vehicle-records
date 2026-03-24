@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vmt-v2';
+const CACHE_NAME = 'vmt-v3';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
