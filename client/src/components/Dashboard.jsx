@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Car,
   Wrench,
-  DollarSign,
   AlertTriangle,
   Filter,
   ArrowUpDown,
@@ -11,6 +10,13 @@ import {
   X,
   Plus,
 } from 'lucide-react';
+
+// Custom AED currency icon to replace DollarSign
+const AedIcon = ({ className }) => (
+  <span className={`${className} flex items-center justify-center font-bold`} style={{ fontSize: '0.65rem' }}>
+    AED
+  </span>
+);
 import { getVehicles, getUpcomingMaintenance } from '../api';
 import VehicleCard from './VehicleCard';
 import KmUpdateModal from './KmUpdateModal';
@@ -86,10 +92,10 @@ export default function Dashboard() {
     const vehicleList = Array.isArray(vehicles) ? vehicles : [];
     const totalVehicles = vehicleList.length;
     const servicesThisMonth = vehicleList.reduce((sum, v) => {
-      return sum + (v.servicesThisMonth || 0);
+      return sum + Number(v.servicesThisMonth || 0);
     }, 0);
     const totalSpend = vehicleList.reduce((sum, v) => {
-      return sum + (v.totalSpend || v.total_spend || 0);
+      return sum + Number(v.totalSpend || v.total_spend || 0);
     }, 0);
     const upcomingDue = Array.isArray(upcoming) ? upcoming.length : 0;
 
@@ -141,8 +147,8 @@ export default function Dashboard() {
     },
     {
       label: 'Total Spend (AED)',
-      value: stats.totalSpend.toLocaleString(),
-      icon: DollarSign,
+      value: `AED ${stats.totalSpend.toLocaleString()}`,
+      icon: AedIcon,
       color: 'text-violet-700 dark:text-violet-400',
       bg: 'bg-violet-50 dark:bg-violet-950/50',
     },
