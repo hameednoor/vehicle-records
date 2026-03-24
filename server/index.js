@@ -119,8 +119,8 @@ function mountRoutes() {
   app.use('/api/exchange', exchangeRoutes);
 
   // Health check endpoint
-  app.get('/api/health', (req, res) => {
-    res.json({
+  app.get('/api/health', async (req, res) => {
+    const result = {
       status: 'ok',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
@@ -130,7 +130,30 @@ function mountRoutes() {
       googleDriveConfigured: !!(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY),
       googleServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || 'NOT SET',
       geminiConfigured: !!process.env.GEMINI_API_KEY,
-    });
+    };
+
+    // Test Google Drive connection if configured
+    if (isCloudStorage) {
+      try {
+        const { getDrive } = require('./services/storage');
+        const drive = getDrive();
+        const about = await drive.about.get({ fields: 'user' });
+        result.googleDriveStatus = 'connected';
+        result.googleDriveUser = about.data.user?.emailAddress || 'unknown';
+      } catch (err) {
+        result.googleDriveStatus = 'error';
+        result.googleDriveError = err.message;
+      }
+    }
+
+    // Show key format info for debugging (no sensitive data)
+    const rawKey = process.env.GOOGLE_PRIVATE_KEY || '';
+    result.keyLength = rawKey.length;
+    result.keyStartsWith = rawKey.substring(0, 30).replace(/[A-Za-z0-9+/=]/g, 'x');
+    result.keyHasLiteralNewlines = rawKey.includes('\\n');
+    result.keyHasRealNewlines = rawKey.includes('\n');
+
+    res.json(result);
   });
 
   // In production, serve index.html for client-side routing

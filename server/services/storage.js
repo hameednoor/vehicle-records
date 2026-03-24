@@ -40,26 +40,49 @@ let driveClient = null;
 
 function parsePrivateKey(raw) {
   if (!raw) return '';
-  // Remove surrounding quotes if pasted from .env
+
+  // Method 1: Try JSON.parse — handles "...\n..." with proper escape processing
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed === 'string' && parsed.includes('PRIVATE KEY')) {
+      console.log('[Drive] Private key parsed via JSON.parse (quoted value)');
+      return parsed;
+    }
+  } catch {}
+
+  // Method 2: Wrap in quotes and JSON.parse — handles \n as JSON escapes
+  try {
+    const parsed = JSON.parse(`"${raw.replace(/"/g, '\\"')}"`);
+    if (typeof parsed === 'string' && parsed.includes('PRIVATE KEY')) {
+      console.log('[Drive] Private key parsed via JSON.parse (unquoted value)');
+      return parsed;
+    }
+  } catch {}
+
+  // Method 3: Manual replacement
   let key = raw.replace(/^["']|["']$/g, '');
-  // Replace literal \n sequences with real newlines
   key = key.replace(/\\n/g, '\n');
-  // Remove any \r characters (Windows line endings)
   key = key.replace(/\r/g, '');
-  // Ensure proper PEM formatting
-  if (key.includes('-----BEGIN') && !key.includes('\n')) {
-    // Key is all on one line — reformat it
-    key = key
-      .replace(/-----BEGIN PRIVATE KEY-----/, '-----BEGIN PRIVATE KEY-----\n')
-      .replace(/-----END PRIVATE KEY-----/, '\n-----END PRIVATE KEY-----\n');
-    // Split the base64 body into 64-char lines
-    const parts = key.split('\n');
-    const header = parts[0];
-    const footer = parts[parts.length - 2] || parts[parts.length - 1];
-    const body = parts.slice(1, -2).join('').replace(/\s/g, '');
-    const lines = body.match(/.{1,64}/g) || [];
-    key = [header, ...lines, footer, ''].join('\n');
+
+  // If still no newlines, reformat the PEM
+  if (key.includes('-----BEGIN') && key.indexOf('\n') === -1) {
+    const b64 = key
+      .replace(/-----BEGIN PRIVATE KEY-----/, '')
+      .replace(/-----END PRIVATE KEY-----/, '')
+      .replace(/\s/g, '');
+    const lines = b64.match(/.{1,64}/g) || [];
+    key = ['-----BEGIN PRIVATE KEY-----', ...lines, '-----END PRIVATE KEY-----', ''].join('\n');
+    console.log('[Drive] Private key reformatted from single line');
+  } else {
+    console.log('[Drive] Private key parsed via manual replacement');
   }
+
+  // Debug: log key shape (not the key itself)
+  const lineCount = key.split('\n').length;
+  const hasHeader = key.includes('-----BEGIN PRIVATE KEY-----');
+  const hasFooter = key.includes('-----END PRIVATE KEY-----');
+  console.log(`[Drive] Key shape: ${key.length} chars, ${lineCount} lines, header=${hasHeader}, footer=${hasFooter}`);
+
   return key;
 }
 
