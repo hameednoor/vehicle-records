@@ -125,7 +125,7 @@ function getDrive() {
       client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
       private_key: privateKey,
     },
-    scopes: ['https://www.googleapis.com/auth/drive'],
+    scopes: ['https://www.googleapis.com/auth/drive.file'],
   });
   driveClient = drive({ version: 'v3', auth });
   console.log('[Drive] Using service account (WARNING: no storage quota)');

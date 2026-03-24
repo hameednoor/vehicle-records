@@ -31,7 +31,8 @@ if (!CLIENT_ID || !CLIENT_SECRET) {
   process.exit(1);
 }
 
-const SCOPES = 'https://www.googleapis.com/auth/drive';
+// drive.file = only files created by this app (not full Drive access)
+const SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
 const authUrl =
   `https://accounts.google.com/o/oauth2/v2/auth?` +
