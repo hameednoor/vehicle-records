@@ -236,35 +236,36 @@ export default function ServiceForm() {
     }
   };
 
-  // OCR analysis for uploaded image files
+  // Gemini AI analysis for uploaded invoice files (images and PDFs)
   const runOcrOnFiles = async (files) => {
-    const imageFiles = files.filter(
+    const analyzableFiles = files.filter(
       (f) =>
         f.type?.startsWith('image/') ||
-        /\.(jpg|jpeg|png|webp|heic|bmp|gif)$/i.test(f.name)
+        f.type === 'application/pdf' ||
+        /\.(jpg|jpeg|png|webp|heic|bmp|gif|pdf)$/i.test(f.name)
     );
-    if (imageFiles.length === 0) return;
+    if (analyzableFiles.length === 0) return;
 
     setAnalyzingInvoice(true);
     setInvoiceDetected(null);
 
     try {
-      // Dynamic import so tesseract.js is only loaded when needed
       const { analyzeInvoiceBrowser } = await import('../services/ocr');
 
       const results = await Promise.all(
-        imageFiles.map((file) =>
+        analyzableFiles.map((file) =>
           analyzeInvoiceBrowser(file).catch((err) => {
-            console.error('[OCR] Failed for', file.name, err);
+            console.error('[Gemini] Failed for', file.name, err);
             return null;
           })
         )
       );
 
-      console.log('[OCR] Results:', results);
+      console.log('[Gemini] Results:', results);
 
       let batchCost = 0;
       let detectedCurrency = null;
+      let detectedProvider = null;
       let anyResult = false;
 
       for (const result of results) {
@@ -277,15 +278,19 @@ export default function ServiceForm() {
           );
           if (validCode) detectedCurrency = result.currency;
         }
+        if (result.provider && !detectedProvider) {
+          detectedProvider = result.provider;
+        }
       }
 
-      if (batchCost > 0 || detectedCurrency) {
+      if (batchCost > 0 || detectedCurrency || detectedProvider) {
         const newTotal = analysisCostRef.current + batchCost;
         analysisCostRef.current = newTotal;
 
         setInvoiceDetected({
           cost: newTotal,
           currency: detectedCurrency,
+          provider: detectedProvider,
         });
 
         if (newTotal > 0) {
@@ -294,22 +299,26 @@ export default function ServiceForm() {
         if (detectedCurrency) {
           setCurrency(detectedCurrency);
         }
+        if (detectedProvider && !form.provider) {
+          handleChange('provider', detectedProvider);
+        }
 
         const parts = [];
         if (detectedCurrency) parts.push(detectedCurrency);
         if (newTotal) parts.push(newTotal.toLocaleString());
+        if (detectedProvider) parts.push(`from ${detectedProvider}`);
         if (parts.length > 0) {
           showSuccess(
-            `Detected from invoice${imageFiles.length > 1 ? 's' : ''}: ${parts.join(' ')}`
+            `Detected from invoice${analyzableFiles.length > 1 ? 's' : ''}: ${parts.join(' ')}`
           );
         }
       } else if (!anyResult) {
-        showError('Could not read invoice text. Try a clearer photo.');
+        showError('Could not read invoice. Try a clearer photo.');
       } else {
         showSuccess('Invoice scanned but no cost found. Enter cost manually.');
       }
     } catch (err) {
-      console.error('[OCR] Import or analysis failed:', err);
+      console.error('[Gemini] Analysis failed:', err);
       showError('Invoice scanning failed. Enter cost manually.');
     } finally {
       setAnalyzingInvoice(false);
@@ -729,13 +738,14 @@ export default function ServiceForm() {
             <div className="flex items-center gap-2 mt-2 text-sm text-brand-600 dark:text-brand-400">
               <Loader2 className="w-4 h-4 animate-spin" />
               <ScanLine className="w-4 h-4 animate-pulse" />
-              <span>Scanning invoice for cost &amp; currency...</span>
+              <span>Analyzing invoice with AI...</span>
             </div>
           )}
           {invoiceDetected && !analyzingInvoice && (
             <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2">
-              Auto-detected: {invoiceDetected.currency || 'Unknown currency'}{' '}
-              {invoiceDetected.cost?.toLocaleString() || '\u2014'}{' '}
+              AI detected: {invoiceDetected.currency || ''}{' '}
+              {invoiceDetected.cost?.toLocaleString() || '\u2014'}
+              {invoiceDetected.provider ? ` — ${invoiceDetected.provider}` : ''}{' '}
               <span className="text-gray-400">(edit above if needed)</span>
             </p>
           )}

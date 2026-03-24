@@ -176,6 +176,18 @@ export const logKm = (vehicleId, data) => {
 
 export const getVehicleKmLogs = (vehicleId) => cachedGet(`/km-logs/vehicle/${vehicleId}`);
 
+export const analyzeOdometer = (file, currentKms) => {
+  const formData = new FormData();
+  formData.append('photo', file);
+  formData.append('currentKms', String(currentKms || 0));
+  return api
+    .post('/km-logs/analyze-odometer', formData, {
+      headers: { 'Content-Type': undefined },
+      timeout: 60000,
+    })
+    .then((r) => r.data);
+};
+
 // ============ Reminders ============
 export const getReminders = () => cachedGet('/reminders');
 

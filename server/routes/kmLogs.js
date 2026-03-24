@@ -1,9 +1,43 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
 const { getDb } = require('../db/database');
+const { upload } = require('../middleware/upload');
+const { analyzeOdometer } = require('../services/ocr');
 
 const router = express.Router();
+
+/**
+ * POST /analyze-odometer - Upload an odometer photo and extract the reading via Gemini AI.
+ * Returns { reading, candidates }
+ */
+router.post('/analyze-odometer', upload.single('photo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded.' });
+    }
+
+    const currentKms = Number(req.body.currentKms) || 0;
+    const result = await analyzeOdometer(req.file.path, currentKms);
+
+    // Clean up temp file
+    try {
+      fs.unlinkSync(req.file.path);
+    } catch { /* ignore */ }
+
+    res.json({
+      reading: result.reading,
+      candidates: result.candidates,
+    });
+  } catch (error) {
+    console.error('Error analyzing odometer:', error.message);
+    if (req.file?.path) {
+      try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+    }
+    res.status(500).json({ error: 'Failed to analyze odometer image.' });
+  }
+});
 
 /**
  * POST / - Log a new KM reading for a vehicle.

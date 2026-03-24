@@ -1,138 +1,9 @@
 import { useState, useRef, useCallback } from 'react';
 import { Gauge, Save, Camera, Upload, Keyboard, X, Loader2, ScanLine, RotateCcw } from 'lucide-react';
-// Dynamically import tesseract.js only when needed (large ~15MB library)
-const loadTesseract = () => import('tesseract.js').then((m) => m.createWorker);
-import { updateKms } from '../api';
+import { updateKms, analyzeOdometer } from '../api';
 import Modal from './ui/Modal';
 import { showSuccess, showError } from './ui/Toast';
 import { format } from 'date-fns';
-
-/**
- * Preprocess an image for digit-only OCR.
- * Applies: resize → grayscale → contrast stretch → Otsu binarization.
- * Returns a PNG Blob optimized for Tesseract digit recognition.
- */
-function preprocessForDigits(imageDataUrl, invert = false) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-      // Scale to a good size for OCR (not too big, not too small)
-      const maxDim = 2000;
-      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const d = imageData.data;
-
-      // 1) Convert to grayscale
-      for (let i = 0; i < d.length; i += 4) {
-        const gray = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
-        d[i] = gray;
-        d[i + 1] = gray;
-        d[i + 2] = gray;
-      }
-
-      // 2) Auto-contrast: stretch histogram to full 0-255 range
-      let min = 255, max = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        if (d[i] < min) min = d[i];
-        if (d[i] > max) max = d[i];
-      }
-      const range = max - min || 1;
-      for (let i = 0; i < d.length; i += 4) {
-        const stretched = Math.round(((d[i] - min) / range) * 255);
-        d[i] = stretched;
-        d[i + 1] = stretched;
-        d[i + 2] = stretched;
-      }
-
-      // 3) Otsu's threshold for binarization
-      const histogram = new Array(256).fill(0);
-      const totalPixels = canvas.width * canvas.height;
-      for (let i = 0; i < d.length; i += 4) histogram[d[i]]++;
-
-      let sum = 0;
-      for (let t = 0; t < 256; t++) sum += t * histogram[t];
-
-      let sumB = 0, wB = 0, maxVar = 0, threshold = 128;
-      for (let t = 0; t < 256; t++) {
-        wB += histogram[t];
-        if (wB === 0) continue;
-        const wF = totalPixels - wB;
-        if (wF === 0) break;
-        sumB += t * histogram[t];
-        const mB = sumB / wB;
-        const mF = (sum - sumB) / wF;
-        const between = wB * wF * (mB - mF) * (mB - mF);
-        if (between > maxVar) {
-          maxVar = between;
-          threshold = t;
-        }
-      }
-
-      // 4) Apply threshold (binarize), optionally invert
-      for (let i = 0; i < d.length; i += 4) {
-        let val = d[i] > threshold ? 255 : 0;
-        if (invert) val = 255 - val;
-        d[i] = val;
-        d[i + 1] = val;
-        d[i + 2] = val;
-      }
-
-      ctx.putImageData(imageData, 0, 0);
-      canvas.toBlob((blob) => resolve(blob), 'image/png');
-    };
-    img.src = imageDataUrl;
-  });
-}
-
-/**
- * Extract digit-only candidates from OCR text.
- * Finds numbers that look like odometer readings (3-7 digits).
- */
-function extractDigitCandidates(text, currentKms) {
-  // Remove everything except digits, spaces, commas, periods, newlines
-  const cleaned = text.replace(/[^\d,.\s\n]/g, ' ');
-
-  // Find all numeric sequences (may have thousand separators)
-  const matches = cleaned.match(/\d[\d,.\s]*\d|\d/g) || [];
-
-  const seen = new Set();
-  const candidates = [];
-
-  for (const m of matches) {
-    // Remove separators and spaces, keep raw digits
-    const digits = m.replace(/[,.\s]/g, '');
-    const num = parseInt(digits, 10);
-    if (isNaN(num) || seen.has(num)) continue;
-    // Odometer readings: 100 to 999999
-    if (num >= 100 && num <= 999999) {
-      seen.add(num);
-      candidates.push(num);
-    }
-  }
-
-  // Score and sort: prefer values >= currentKms and closest to it
-  candidates.sort((a, b) => {
-    const aAbove = a >= currentKms;
-    const bAbove = b >= currentKms;
-    // Prefer values >= current reading
-    if (aAbove && !bAbove) return -1;
-    if (!aAbove && bAbove) return 1;
-    // Among values above, prefer closest
-    if (aAbove && bAbove) return (a - currentKms) - (b - currentKms);
-    // Among values below, prefer closest
-    return (currentKms - a) - (currentKms - b);
-  });
-
-  return candidates;
-}
 
 export default function KmUpdateModal({ vehicle, onClose, onUpdated }) {
   const currentKms = vehicle.currentKms || vehicle.current_kms || 0;
@@ -144,58 +15,28 @@ export default function KmUpdateModal({ vehicle, onClose, onUpdated }) {
 
   // Photo/OCR state
   const [imagePreview, setImagePreview] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
   const [ocrProcessing, setOcrProcessing] = useState(false);
-  const [ocrProgress, setOcrProgress] = useState('');
   const [ocrCandidates, setOcrCandidates] = useState([]);
-  const [ocrRawText, setOcrRawText] = useState('');
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
 
   const runOcr = useCallback(
-    async (dataUrl) => {
+    async (file) => {
       setOcrProcessing(true);
       setOcrCandidates([]);
-      setOcrRawText('');
       setError('');
 
-      const allCandidates = new Set();
-      const allRawTexts = [];
-
       try {
-        // Run OCR in multiple passes for robustness:
-        // Pass 1: Preprocessed (normal threshold) + digits-only whitelist
-        // Pass 2: Preprocessed (inverted) for digital displays with light text on dark
-        // Pass 3: Original image with digits-only (catches what preprocessing might miss)
-        const passes = [
-          { label: 'Processing (pass 1/3)...', blob: await preprocessForDigits(dataUrl, false) },
-          { label: 'Processing (pass 2/3)...', blob: await preprocessForDigits(dataUrl, true) },
-          { label: 'Processing (pass 3/3)...', blob: dataUrl }, // original
-        ];
+        const result = await analyzeOdometer(file, currentKms);
 
-        for (const pass of passes) {
-          setOcrProgress(pass.label);
-          try {
-            const createWorker = await loadTesseract();
-            const worker = await createWorker('eng', 1); // OEM 1 = LSTM only
-            await worker.setParameters({
-              tessedit_char_whitelist: '0123456789 .,',
-            });
-            const { data: { text } } = await worker.recognize(pass.blob);
-            await worker.terminate();
-
-            if (text && text.trim()) {
-              allRawTexts.push(text.trim());
-              const candidates = extractDigitCandidates(text, currentKms);
-              candidates.forEach((c) => allCandidates.add(c));
-            }
-          } catch (e) {
-            console.warn('OCR pass failed:', e.message);
-          }
+        const candidates = result.candidates || [];
+        if (result.reading && !candidates.includes(result.reading)) {
+          candidates.unshift(result.reading);
         }
 
-        const finalCandidates = [...allCandidates];
-        // Re-sort merged results
-        finalCandidates.sort((a, b) => {
+        // Sort: prefer values >= currentKms and closest to it
+        candidates.sort((a, b) => {
           const aAbove = a >= currentKms;
           const bAbove = b >= currentKms;
           if (aAbove && !bAbove) return -1;
@@ -204,20 +45,20 @@ export default function KmUpdateModal({ vehicle, onClose, onUpdated }) {
           return (currentKms - a) - (currentKms - b);
         });
 
-        setOcrCandidates(finalCandidates);
-        setOcrRawText(allRawTexts.join('\n---\n'));
+        setOcrCandidates(candidates);
 
-        if (finalCandidates.length > 0) {
-          setNewKms(finalCandidates[0].toString());
+        if (result.reading) {
+          setNewKms(result.reading.toString());
+        } else if (candidates.length > 0) {
+          setNewKms(candidates[0].toString());
         } else {
           setError('Could not detect a reading. Please enter manually.');
         }
       } catch (err) {
-        console.error('OCR error:', err);
-        setError('OCR failed. Please enter the reading manually.');
+        console.error('Odometer OCR error:', err);
+        setError('AI analysis failed. Please enter the reading manually.');
       } finally {
         setOcrProcessing(false);
-        setOcrProgress('');
       }
     },
     [currentKms]
@@ -228,24 +69,27 @@ export default function KmUpdateModal({ vehicle, onClose, onUpdated }) {
       const file = e.target.files?.[0];
       if (!file) return;
 
+      setSelectedFile(file);
+
+      // Show preview
       const reader = new FileReader();
       reader.onload = (ev) => {
-        const dataUrl = ev.target.result;
-        setImagePreview(dataUrl);
-        runOcr(dataUrl);
+        setImagePreview(ev.target.result);
       };
       reader.readAsDataURL(file);
+
+      // Send to server for AI analysis
+      runOcr(file);
     },
     [runOcr]
   );
 
   const clearImage = () => {
     setImagePreview(null);
+    setSelectedFile(null);
     setOcrCandidates([]);
-    setOcrRawText('');
     setNewKms('');
     setError('');
-    setOcrProgress('');
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (cameraInputRef.current) cameraInputRef.current.value = '';
   };
@@ -328,7 +172,7 @@ export default function KmUpdateModal({ vehicle, onClose, onUpdated }) {
               <Camera className="w-6 h-6 text-emerald-700 dark:text-emerald-400" />
             </div>
             <div className="text-left">
-              <p className="font-semibold text-gray-900 dark:text-gray-50">Photo / OCR</p>
+              <p className="font-semibold text-gray-900 dark:text-gray-50">Photo / AI</p>
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Take a photo or upload an image of the odometer
               </p>
@@ -343,7 +187,7 @@ export default function KmUpdateModal({ vehicle, onClose, onUpdated }) {
     <Modal
       open={true}
       onClose={onClose}
-      title={mode === 'manual' ? 'Manual KM Entry' : 'OCR KM Reading'}
+      title={mode === 'manual' ? 'Manual KM Entry' : 'AI KM Reading'}
       size="md"
     >
       <form onSubmit={handleSubmit} className="space-y-5">
@@ -438,7 +282,7 @@ export default function KmUpdateModal({ vehicle, onClose, onUpdated }) {
                     <X className="w-4 h-4" />
                   </button>
 
-                  {/* OCR processing overlay */}
+                  {/* Processing overlay */}
                   {ocrProcessing && (
                     <div className="absolute inset-0 bg-black/50 flex flex-col items-center
                                     justify-center gap-3">
@@ -446,24 +290,24 @@ export default function KmUpdateModal({ vehicle, onClose, onUpdated }) {
                         <ScanLine className="w-10 h-10 text-emerald-400 animate-pulse" />
                         <Loader2 className="w-6 h-6 text-white animate-spin absolute -top-1 -right-1" />
                       </div>
-                      <p className="text-white text-sm font-medium">{ocrProgress || 'Reading...'}</p>
+                      <p className="text-white text-sm font-medium">Analyzing with AI...</p>
                     </div>
                   )}
                 </div>
 
                 {/* Retry button */}
-                {!ocrProcessing && (
+                {!ocrProcessing && selectedFile && (
                   <button
                     type="button"
-                    onClick={() => runOcr(imagePreview)}
+                    onClick={() => runOcr(selectedFile)}
                     className="text-xs text-brand-600 dark:text-brand-400 hover:underline flex items-center gap-1"
                   >
                     <RotateCcw className="w-3 h-3" />
-                    Re-scan image
+                    Re-analyze image
                   </button>
                 )}
 
-                {/* OCR candidates */}
+                {/* Candidates */}
                 {!ocrProcessing && ocrCandidates.length > 1 && (
                   <div>
                     <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
@@ -490,19 +334,6 @@ export default function KmUpdateModal({ vehicle, onClose, onUpdated }) {
                       ))}
                     </div>
                   </div>
-                )}
-
-                {/* OCR raw text (collapsible) */}
-                {!ocrProcessing && ocrRawText && (
-                  <details className="text-xs">
-                    <summary className="text-gray-400 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300">
-                      Raw OCR output
-                    </summary>
-                    <pre className="mt-1 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg text-gray-500
-                                    dark:text-gray-400 whitespace-pre-wrap max-h-24 overflow-y-auto font-mono">
-                      {ocrRawText}
-                    </pre>
-                  </details>
                 )}
               </div>
             )}

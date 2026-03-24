@@ -11,8 +11,8 @@ const { upload } = require('../middleware/upload');
 const router = express.Router();
 
 /**
- * POST /analyze - Upload a single invoice image and extract cost + currency via OCR.
- * Returns { cost, currency, rawText } without creating any DB records.
+ * POST /analyze - Upload a single invoice image and extract data via Gemini AI.
+ * Returns { cost, currency, provider, rawText } without creating any DB records.
  */
 router.post('/analyze', upload.single('invoice'), async (req, res) => {
   try {
@@ -30,6 +30,7 @@ router.post('/analyze', upload.single('invoice'), async (req, res) => {
     res.json({
       cost: result.cost,
       currency: result.currency,
+      provider: result.provider || null,
       rawText: result.rawText,
     });
   } catch (error) {
