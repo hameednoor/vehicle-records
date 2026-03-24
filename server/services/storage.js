@@ -41,6 +41,22 @@ let driveClient = null;
 function parsePrivateKey(raw) {
   if (!raw) return '';
 
+  // Method 0: Base64-encoded key (most reliable for Vercel)
+  const base64Key = process.env.GOOGLE_PRIVATE_KEY_BASE64;
+  if (base64Key) {
+    try {
+      const decoded = Buffer.from(base64Key, 'base64').toString('utf8');
+      if (decoded.includes('PRIVATE KEY')) {
+        console.log('[Drive] Private key decoded from GOOGLE_PRIVATE_KEY_BASE64');
+        const lineCount = decoded.split('\n').length;
+        console.log(`[Drive] Key shape: ${decoded.length} chars, ${lineCount} lines, header=true, footer=true`);
+        return decoded;
+      }
+    } catch (err) {
+      console.warn('[Drive] Failed to decode GOOGLE_PRIVATE_KEY_BASE64:', err.message);
+    }
+  }
+
   // Method 1: Try JSON.parse — handles "...\n..." with proper escape processing
   try {
     const parsed = JSON.parse(raw);
