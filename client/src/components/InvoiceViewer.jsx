@@ -30,11 +30,18 @@ export default function InvoiceViewer({
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < invoices.length - 1;
 
+  // Keyboard navigation
   const handleKeyDown = useCallback(
     (e) => {
-      if (e.key === 'Escape') onClose();
-      if (e.key === 'ArrowLeft' && hasPrev) onNavigate(currentIndex - 1);
-      if (e.key === 'ArrowRight' && hasNext) onNavigate(currentIndex + 1);
+      if (e.key === 'Escape') {
+        onClose();
+      }
+      if (e.key === 'ArrowLeft' && hasPrev) {
+        onNavigate(currentIndex - 1);
+      }
+      if (e.key === 'ArrowRight' && hasNext) {
+        onNavigate(currentIndex + 1);
+      }
     },
     [onClose, hasPrev, hasNext, currentIndex, onNavigate]
   );
@@ -48,12 +55,13 @@ export default function InvoiceViewer({
     };
   }, [handleKeyDown]);
 
-  // Reset zoom on navigation
+  // Reset zoom and confirm state on navigation
   useEffect(() => {
     setZoom(1);
     setConfirmDelete(false);
   }, [currentIndex]);
 
+  // Download handler
   const handleDownload = async () => {
     try {
       const invoiceId = invoice._id || invoice.id;
@@ -67,8 +75,11 @@ export default function InvoiceViewer({
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch {
-      // Fallback: open in new tab
-      const imageUrl = invoice.url || invoice.filePath || invoice.fileUrl || invoice.thumbnailUrl;
+      const imageUrl =
+        invoice.url ||
+        invoice.filePath ||
+        invoice.fileUrl ||
+        invoice.thumbnailUrl;
       if (imageUrl) {
         window.open(imageUrl, '_blank');
       } else {
@@ -77,6 +88,7 @@ export default function InvoiceViewer({
     }
   };
 
+  // Delete handler — first click shows confirm, second click deletes
   const handleDelete = async () => {
     if (!confirmDelete) {
       setConfirmDelete(true);
@@ -86,7 +98,9 @@ export default function InvoiceViewer({
     try {
       await deleteInvoice(invoice._id || invoice.id);
       showSuccess('Invoice deleted');
-      onDeleted?.(invoice._id || invoice.id);
+      if (onDeleted) {
+        onDeleted(invoice._id || invoice.id);
+      }
     } catch (err) {
       showError(err.message);
     } finally {
@@ -95,7 +109,13 @@ export default function InvoiceViewer({
     }
   };
 
-  const rawUrl = invoice.url || invoice.filePath || invoice.fileUrl || invoice.thumbnailUrl;
+  // Determine file type
+  const rawUrl =
+    invoice.url ||
+    invoice.filePath ||
+    invoice.fileUrl ||
+    invoice.thumbnailUrl;
+
   const isPdf =
     (invoice.fileType || invoice.file_type || '').toLowerCase() === '.pdf' ||
     (invoice.originalName || '').toLowerCase().endsWith('.pdf') ||
@@ -103,13 +123,15 @@ export default function InvoiceViewer({
 
   // Transform Google Drive URLs for proper display
   const getDisplayUrl = (url, pdf) => {
-    if (!url) return url;
+    if (!url) {
+      return url;
+    }
     const match = url.match(/drive\.google\.com\/uc\?id=([^&]+)/);
     if (match) {
-      // PDFs need the preview endpoint; images work with uc?id
-      return pdf
-        ? `https://drive.google.com/file/d/${match[1]}/preview`
-        : url;
+      if (pdf) {
+        return `https://drive.google.com/file/d/${match[1]}/preview`;
+      }
+      return url;
     }
     return url;
   };
@@ -121,15 +143,23 @@ export default function InvoiceViewer({
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/90 flex animate-fade-in">
-      {/* Top toolbar */}
-      <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between
-                      px-4 py-3 bg-gradient-to-b from-black/70 to-transparent">
+      {/* ================================================================= */}
+      {/* Top toolbar                                                       */}
+      {/* ================================================================= */}
+      <div
+        className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between
+                    px-4 py-3 bg-gradient-to-b from-black/70 to-transparent"
+      >
+        {/* Left side — counter */}
         <div className="flex items-center gap-2">
           <span className="text-white/70 text-sm">
             {currentIndex + 1} / {invoices.length}
           </span>
         </div>
+
+        {/* Right side — action buttons */}
         <div className="flex items-center gap-1">
+          {/* Zoom out */}
           <button
             onClick={() => setZoom((z) => Math.max(0.5, z - 0.25))}
             className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg
@@ -138,9 +168,13 @@ export default function InvoiceViewer({
           >
             <ZoomOut className="w-5 h-5" />
           </button>
+
+          {/* Zoom percentage */}
           <span className="text-white/70 text-sm w-14 text-center">
             {Math.round(zoom * 100)}%
           </span>
+
+          {/* Zoom in */}
           <button
             onClick={() => setZoom((z) => Math.min(3, z + 0.25))}
             className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg
@@ -149,7 +183,10 @@ export default function InvoiceViewer({
           >
             <ZoomIn className="w-5 h-5" />
           </button>
+
           <div className="w-px h-6 bg-white/20 mx-1" />
+
+          {/* Toggle OCR text */}
           <button
             onClick={() => setShowOcr(!showOcr)}
             className={`p-2 rounded-lg transition-colors ${
@@ -159,8 +196,14 @@ export default function InvoiceViewer({
             }`}
             title={showOcr ? 'Hide OCR text' : 'Show OCR text'}
           >
-            {showOcr ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+            {showOcr ? (
+              <EyeOff className="w-5 h-5" />
+            ) : (
+              <Eye className="w-5 h-5" />
+            )}
           </button>
+
+          {/* Download */}
           <button
             onClick={handleDownload}
             className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg
@@ -169,19 +212,31 @@ export default function InvoiceViewer({
           >
             <Download className="w-5 h-5" />
           </button>
+
+          <div className="w-px h-6 bg-white/20 mx-1" />
+
+          {/* Delete — shows red background on first click for confirm */}
           <button
             onClick={handleDelete}
             disabled={deleting}
-            className={`p-2 rounded-lg transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${
               confirmDelete
-                ? 'text-red-400 bg-red-500/20'
-                : 'text-white/70 hover:text-white hover:bg-white/10'
+                ? 'bg-red-600 text-white'
+                : 'text-red-400 hover:text-red-300 hover:bg-white/10'
             }`}
-            title={confirmDelete ? 'Click again to confirm' : 'Delete'}
+            title={confirmDelete ? 'Click again to confirm delete' : 'Delete this invoice'}
           >
-            <Trash2 className="w-5 h-5" />
+            <Trash2 className="w-4 h-4" />
+            {deleting
+              ? 'Deleting...'
+              : confirmDelete
+              ? 'Confirm Delete'
+              : 'Delete'}
           </button>
+
           <div className="w-px h-6 bg-white/20 mx-1" />
+
+          {/* Close */}
           <button
             onClick={onClose}
             className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg
@@ -192,7 +247,9 @@ export default function InvoiceViewer({
         </div>
       </div>
 
-      {/* Navigation arrows */}
+      {/* ================================================================= */}
+      {/* Navigation arrows                                                 */}
+      {/* ================================================================= */}
       {hasPrev && (
         <button
           onClick={() => onNavigate(currentIndex - 1)}
@@ -214,9 +271,11 @@ export default function InvoiceViewer({
         </button>
       )}
 
-      {/* Main content */}
+      {/* ================================================================= */}
+      {/* Main content area                                                 */}
+      {/* ================================================================= */}
       <div className="flex-1 flex">
-        {/* Image area */}
+        {/* Image / PDF display */}
         <div
           className={`flex-1 flex items-center justify-center overflow-auto p-4 pt-16 ${
             showOcr ? 'sm:mr-80' : ''
@@ -227,7 +286,10 @@ export default function InvoiceViewer({
               src={imageUrl}
               title="Invoice PDF"
               className="w-full h-full rounded-lg border-0"
-              style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}
+              style={{
+                transform: `scale(${zoom})`,
+                transformOrigin: 'center center',
+              }}
             />
           ) : imageUrl ? (
             <img
@@ -247,8 +309,10 @@ export default function InvoiceViewer({
 
         {/* OCR sidebar */}
         {showOcr && (
-          <div className="fixed right-0 top-0 bottom-0 w-full sm:w-80 bg-gray-900
-                         border-l border-gray-800 z-20 flex flex-col animate-slide-in-right">
+          <div
+            className="fixed right-0 top-0 bottom-0 w-full sm:w-80 bg-gray-900
+                       border-l border-gray-800 z-20 flex flex-col animate-slide-in-right"
+          >
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
               <h3 className="text-sm font-semibold text-white">
                 Extracted Text (OCR)
@@ -264,9 +328,12 @@ export default function InvoiceViewer({
               {/* Detected cost/currency */}
               {(ocrCost || ocrCurrency) && (
                 <div className="mb-4 p-3 bg-gray-800 rounded-lg border border-gray-700">
-                  <p className="text-xs font-medium text-gray-400 mb-1">Detected from Invoice</p>
+                  <p className="text-xs font-medium text-gray-400 mb-1">
+                    Detected from Invoice
+                  </p>
                   <p className="text-lg font-semibold text-emerald-400">
-                    {ocrCurrency || ''} {ocrCost ? Number(ocrCost).toLocaleString() : '--'}
+                    {ocrCurrency || ''}{' '}
+                    {ocrCost ? Number(ocrCost).toLocaleString() : '--'}
                   </p>
                 </div>
               )}

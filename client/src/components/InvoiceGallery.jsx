@@ -6,11 +6,17 @@ import {
   Image as ImageIcon,
   Calendar,
   Tag,
+  Trash2,
 } from 'lucide-react';
-import { getVehicleServiceRecords, getServiceInvoices, searchInvoices } from '../api';
+import {
+  getVehicleServiceRecords,
+  getServiceInvoices,
+  searchInvoices,
+  deleteInvoice,
+} from '../api';
 import InvoiceViewer from './InvoiceViewer';
 import { Skeleton } from './ui/LoadingSkeleton';
-import { showError } from './ui/Toast';
+import { showSuccess, showError } from './ui/Toast';
 import { format } from 'date-fns';
 
 export default function InvoiceGallery({ vehicleId }) {
@@ -22,6 +28,7 @@ export default function InvoiceGallery({ vehicleId }) {
   const [searching, setSearching] = useState(false);
   const [filterCategory, setFilterCategory] = useState('all');
   const [categories, setCategories] = useState([]);
+  const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
     fetchInvoices();
@@ -56,7 +63,7 @@ export default function InvoiceGallery({ vehicleId }) {
 
       const fetchedResults = await Promise.all(invoiceFetches);
 
-      // Also process records without invoices for category tracking
+      // Track categories from all records
       for (const record of records) {
         const categoryName =
           typeof record.category === 'object'
@@ -72,6 +79,7 @@ export default function InvoiceGallery({ vehicleId }) {
         }
       }
 
+      // Build flat invoice list with service record metadata
       for (const { record, invoices: recordInvoices } of fetchedResults) {
         const categoryName =
           typeof record.category === 'object'
@@ -119,7 +127,6 @@ export default function InvoiceGallery({ vehicleId }) {
       const resultList = Array.isArray(results)
         ? results
         : results?.invoices || results?.data || [];
-      // Map filePath to url for consistent display
       setSearchResults(
         resultList.map((inv) => ({ ...inv, url: inv.url || inv.filePath }))
       );
@@ -132,11 +139,48 @@ export default function InvoiceGallery({ vehicleId }) {
 
   const displayInvoices = useMemo(() => {
     const list = searchResults || invoices;
-    if (filterCategory === 'all') return list;
+    if (filterCategory === 'all') {
+      return list;
+    }
     return list.filter((inv) => inv.categoryId === filterCategory);
   }, [invoices, searchResults, filterCategory]);
 
-  const handleInvoiceDeleted = (invoiceId) => {
+  const handleDeleteFromGallery = async (event, invoice) => {
+    event.stopPropagation();
+    event.preventDefault();
+
+    const invoiceId = invoice._id || invoice.id;
+    if (deletingId === invoiceId) {
+      return;
+    }
+
+    const confirmed = window.confirm('Delete this invoice?');
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingId(invoiceId);
+    try {
+      await deleteInvoice(invoiceId);
+      showSuccess('Invoice deleted');
+
+      // Remove from both lists
+      setInvoices((prev) =>
+        prev.filter((inv) => (inv._id || inv.id) !== invoiceId)
+      );
+      if (searchResults) {
+        setSearchResults((prev) =>
+          prev.filter((inv) => (inv._id || inv.id) !== invoiceId)
+        );
+      }
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleInvoiceDeletedFromViewer = (invoiceId) => {
     setInvoices((prev) =>
       prev.filter((inv) => (inv._id || inv.id) !== invoiceId)
     );
@@ -148,6 +192,9 @@ export default function InvoiceGallery({ vehicleId }) {
     setSelectedIndex(null);
   };
 
+  // ---------------------------------------------------------------------------
+  // Loading skeleton
+  // ---------------------------------------------------------------------------
   if (loading) {
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
@@ -164,6 +211,9 @@ export default function InvoiceGallery({ vehicleId }) {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Empty state
+  // ---------------------------------------------------------------------------
   if (invoices.length === 0) {
     return (
       <div className="card p-12 text-center">
@@ -178,6 +228,9 @@ export default function InvoiceGallery({ vehicleId }) {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Main render
+  // ---------------------------------------------------------------------------
   return (
     <div className="space-y-4">
       {/* Search and filters */}
@@ -217,11 +270,13 @@ export default function InvoiceGallery({ vehicleId }) {
         </div>
       </div>
 
+      {/* Search results info bar */}
       {searchResults && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            {displayInvoices.length} result{displayInvoices.length !== 1 ? 's' : ''} for
-            &quot;{searchQuery}&quot;
+            {displayInvoices.length} result
+            {displayInvoices.length !== 1 ? 's' : ''} for &quot;{searchQuery}
+            &quot;
           </p>
           <button
             onClick={() => {
@@ -238,53 +293,91 @@ export default function InvoiceGallery({ vehicleId }) {
       {/* Gallery grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
         {displayInvoices.map((invoice, index) => {
-          const url = invoice.url || invoice.filePath || invoice.fileUrl || invoice.thumbnailUrl;
+          const url =
+            invoice.url ||
+            invoice.filePath ||
+            invoice.fileUrl ||
+            invoice.thumbnailUrl;
           const fileType = invoice.fileType || invoice.type || '';
           const isImage =
             (invoice.mimeType || '').toLowerCase().startsWith('image') ||
             /^\.(jpg|jpeg|png|webp|gif|heic)$/i.test(fileType);
+          const invoiceId = invoice._id || invoice.id;
+          const isDeleting = deletingId === invoiceId;
 
           return (
             <div
-              key={invoice._id || invoice.id || index}
-              onClick={() => setSelectedIndex(index)}
-              className="card-hover overflow-hidden cursor-pointer group"
+              key={invoiceId || index}
+              className="card-hover overflow-hidden cursor-pointer relative"
             >
-              <div className="aspect-square bg-gray-50 dark:bg-gray-800 flex items-center justify-center overflow-hidden">
-                {url ? (
-                  <img
-                    src={url}
-                    alt="Invoice"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    loading="lazy"
-                    onError={(e) => {
-                      e.target.replaceWith(
-                        Object.assign(document.createElement('div'), {
-                          className: 'w-full h-full flex items-center justify-center',
-                          innerHTML: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>',
-                        })
-                      );
-                    }}
-                  />
-                ) : (
-                  <FileText className="w-10 h-10 text-gray-400" />
-                )}
-              </div>
-              <div className="p-2 space-y-0.5">
-                <p className="text-xs text-gray-600 dark:text-gray-400 flex items-center gap-1">
-                  <Calendar className="w-3 h-3" />
-                  {(() => { try { return invoice.serviceDate ? format(new Date(invoice.serviceDate), 'MMM d, yyyy') : 'N/A'; } catch { return 'N/A'; } })()}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-500 flex items-center gap-1 text-truncate">
-                  <Tag className="w-3 h-3 flex-shrink-0" />
-                  {invoice.categoryName || 'N/A'}
-                </p>
-                {(invoice.ocrCost || invoice.ocrCurrency) && (
-                  <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                    {invoice.ocrCurrency || ''} {invoice.ocrCost ? Number(invoice.ocrCost).toLocaleString() : ''}
+              {/* Main clickable area — opens viewer */}
+              <div onClick={() => setSelectedIndex(index)}>
+                <div className="aspect-square bg-gray-50 dark:bg-gray-800 flex items-center justify-center overflow-hidden">
+                  {url ? (
+                    <img
+                      src={url}
+                      alt="Invoice"
+                      className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                      loading="lazy"
+                      onError={(e) => {
+                        e.target.replaceWith(
+                          Object.assign(document.createElement('div'), {
+                            className:
+                              'w-full h-full flex items-center justify-center',
+                            innerHTML:
+                              '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>',
+                          })
+                        );
+                      }}
+                    />
+                  ) : (
+                    <FileText className="w-10 h-10 text-gray-400" />
+                  )}
+                </div>
+                <div className="p-2 space-y-0.5">
+                  <p className="text-xs text-gray-600 dark:text-gray-400 flex items-center gap-1">
+                    <Calendar className="w-3 h-3" />
+                    {(() => {
+                      try {
+                        return invoice.serviceDate
+                          ? format(new Date(invoice.serviceDate), 'MMM d, yyyy')
+                          : 'N/A';
+                      } catch {
+                        return 'N/A';
+                      }
+                    })()}
                   </p>
-                )}
+                  <p className="text-xs text-gray-500 dark:text-gray-500 flex items-center gap-1 text-truncate">
+                    <Tag className="w-3 h-3 flex-shrink-0" />
+                    {invoice.categoryName || 'N/A'}
+                  </p>
+                  {(invoice.ocrCost || invoice.ocrCurrency) && (
+                    <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                      {invoice.ocrCurrency || ''}{' '}
+                      {invoice.ocrCost
+                        ? Number(invoice.ocrCost).toLocaleString()
+                        : ''}
+                    </p>
+                  )}
+                </div>
               </div>
+
+              {/* Always-visible delete button on top-right corner */}
+              <button
+                onClick={(e) => handleDeleteFromGallery(e, invoice)}
+                disabled={isDeleting}
+                className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full
+                           bg-red-500 text-white flex items-center justify-center
+                           hover:bg-red-600 active:bg-red-700
+                           shadow-md z-10 border-2 border-white dark:border-gray-900"
+                title="Delete invoice"
+              >
+                {isDeleting ? (
+                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+              </button>
             </div>
           );
         })}
@@ -298,7 +391,7 @@ export default function InvoiceGallery({ vehicleId }) {
           currentIndex={selectedIndex}
           onClose={() => setSelectedIndex(null)}
           onNavigate={setSelectedIndex}
-          onDeleted={handleInvoiceDeleted}
+          onDeleted={handleInvoiceDeletedFromViewer}
         />
       )}
     </div>

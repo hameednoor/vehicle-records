@@ -40,6 +40,7 @@ export default function ServiceHistory({ vehicleId }) {
   const [sortBy, setSortBy] = useState('date-desc');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [deletingInvoiceId, setDeletingInvoiceId] = useState(null);
 
   // Invoice viewer state
   const [viewerInvoices, setViewerInvoices] = useState([]);
@@ -83,7 +84,9 @@ export default function ServiceHistory({ vehicleId }) {
 
   const getCategoryName = (record) => {
     const catId = record.categoryId || record.category_id || record.category;
-    if (typeof catId === 'object' && catId?.name) return catId.name;
+    if (typeof catId === 'object' && catId?.name) {
+      return catId.name;
+    }
     const cat = categories.find((c) => (c._id || c.id) === catId);
     return cat?.name || 'Uncategorized';
   };
@@ -121,11 +124,12 @@ export default function ServiceHistory({ vehicleId }) {
       return;
     }
     setExpandedId(recordId);
-    // Fetch invoices for this record if not already cached
     if (!expandedInvoices[recordId]) {
       try {
         const data = await getServiceInvoices(recordId);
-        const list = Array.isArray(data) ? data : data?.invoices || data?.data || [];
+        const list = Array.isArray(data)
+          ? data
+          : data?.invoices || data?.data || [];
         setExpandedInvoices((prev) => ({ ...prev, [recordId]: list }));
       } catch {
         setExpandedInvoices((prev) => ({ ...prev, [recordId]: [] }));
@@ -138,16 +142,20 @@ export default function ServiceHistory({ vehicleId }) {
     setViewerIndex(index);
   };
 
-  const handleInvoiceDeleted = (deletedId) => {
+  const removeInvoiceFromState = (deletedId) => {
     // Remove from viewer list
-    const updated = viewerInvoices.filter((inv) => (inv._id || inv.id) !== deletedId);
+    const updated = viewerInvoices.filter(
+      (inv) => (inv._id || inv.id) !== deletedId
+    );
     setViewerInvoices(updated);
 
     // Remove from cached expanded invoices
     setExpandedInvoices((prev) => {
       const next = { ...prev };
       for (const key of Object.keys(next)) {
-        next[key] = next[key].filter((inv) => (inv._id || inv.id) !== deletedId);
+        next[key] = next[key].filter(
+          (inv) => (inv._id || inv.id) !== deletedId
+        );
       }
       return next;
     });
@@ -160,18 +168,28 @@ export default function ServiceHistory({ vehicleId }) {
     }
   };
 
-  const [deletingInvoiceId, setDeletingInvoiceId] = useState(null);
+  const handleDeleteInvoice = async (event, invoice) => {
+    event.stopPropagation();
+    event.preventDefault();
 
-  const handleDeleteInvoice = async (e, inv) => {
-    e.stopPropagation();
-    const invId = inv._id || inv.id;
-    if (deletingInvoiceId === invId) return; // already deleting
-    if (!window.confirm('Delete this invoice?')) return;
-    setDeletingInvoiceId(invId);
+    const invoiceId = invoice._id || invoice.id;
+
+    // Prevent double-clicks
+    if (deletingInvoiceId === invoiceId) {
+      return;
+    }
+
+    // Ask for confirmation
+    const confirmed = window.confirm('Delete this invoice?');
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingInvoiceId(invoiceId);
     try {
-      await deleteInvoice(invId);
+      await deleteInvoice(invoiceId);
       showSuccess('Invoice deleted');
-      handleInvoiceDeleted(invId);
+      removeInvoiceFromState(invoiceId);
     } catch (err) {
       showError(err.message);
     } finally {
@@ -179,8 +197,14 @@ export default function ServiceHistory({ vehicleId }) {
     }
   };
 
+  const handleInvoiceDeletedFromViewer = (deletedId) => {
+    removeInvoiceFromState(deletedId);
+  };
+
   const handleDelete = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget) {
+      return;
+    }
     setDeleting(true);
     try {
       await deleteServiceRecord(deleteTarget._id || deleteTarget.id);
@@ -194,6 +218,9 @@ export default function ServiceHistory({ vehicleId }) {
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // Loading skeleton
+  // ---------------------------------------------------------------------------
   if (loading) {
     return (
       <div className="space-y-3">
@@ -211,6 +238,9 @@ export default function ServiceHistory({ vehicleId }) {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Empty state
+  // ---------------------------------------------------------------------------
   if (records.length === 0) {
     return (
       <div className="card p-12 text-center">
@@ -232,6 +262,9 @@ export default function ServiceHistory({ vehicleId }) {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Main render
+  // ---------------------------------------------------------------------------
   return (
     <div className="space-y-4">
       {/* Filters */}
@@ -279,14 +312,19 @@ export default function ServiceHistory({ vehicleId }) {
             const id = record._id || record.id;
             const isExpanded = expandedId === id;
             const date = record.date || record.serviceDate;
-            const invoiceCount = record.invoiceCount || record.invoice_count || (record.invoices || []).length;
+            const invoiceCount =
+              record.invoiceCount ||
+              record.invoice_count ||
+              (record.invoices || []).length;
             const invoices = expandedInvoices[id] || record.invoices || [];
 
             return (
               <div key={id} className="relative sm:pl-12">
                 {/* Timeline dot */}
-                <div className="absolute left-3.5 top-5 w-3 h-3 rounded-full bg-brand-600
-                               border-2 border-white dark:border-gray-900 hidden sm:block z-10" />
+                <div
+                  className="absolute left-3.5 top-5 w-3 h-3 rounded-full bg-brand-600
+                             border-2 border-white dark:border-gray-900 hidden sm:block z-10"
+                />
 
                 <div className="card overflow-hidden">
                   {/* Summary row */}
@@ -309,12 +347,27 @@ export default function ServiceHistory({ vehicleId }) {
                       <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
-                          {(() => { try { return date ? format(new Date(date), 'MMM d, yyyy') : 'N/A'; } catch { return 'N/A'; } })()}
+                          {(() => {
+                            try {
+                              return date
+                                ? format(new Date(date), 'MMM d, yyyy')
+                                : 'N/A';
+                            } catch {
+                              return 'N/A';
+                            }
+                          })()}
                         </span>
-                        {(record.kmsAtService != null || record.kms_at_service != null || record.kms != null) && (
+                        {(record.kmsAtService != null ||
+                          record.kms_at_service != null ||
+                          record.kms != null) && (
                           <span className="flex items-center gap-1">
                             <Gauge className="w-3 h-3" />
-                            {Number(record.kmsAtService ?? record.kms_at_service ?? record.kms).toLocaleString()} km
+                            {Number(
+                              record.kmsAtService ??
+                                record.kms_at_service ??
+                                record.kms
+                            ).toLocaleString()}{' '}
+                            km
                           </span>
                         )}
                         {record.provider && (
@@ -334,8 +387,11 @@ export default function ServiceHistory({ vehicleId }) {
 
                   {/* Expanded details */}
                   {isExpanded && (
-                    <div className="px-4 pb-4 space-y-3 border-t border-gray-100
-                                   dark:border-gray-800 pt-3 animate-fade-in">
+                    <div
+                      className="px-4 pb-4 space-y-3 border-t border-gray-100
+                                 dark:border-gray-800 pt-3 animate-fade-in"
+                    >
+                      {/* Notes */}
                       {record.notes && (
                         <div>
                           <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
@@ -347,41 +403,59 @@ export default function ServiceHistory({ vehicleId }) {
                         </div>
                       )}
 
-                      {/* Invoice thumbnails - CLICKABLE */}
+                      {/* Invoice thumbnails */}
                       {(invoices.length > 0 || invoiceCount > 0) && (
                         <div>
                           <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
                             Invoices ({invoices.length || invoiceCount})
                             {invoices.length > 0 && (
-                              <span className="text-gray-400 ml-1">— tap to view</span>
+                              <span className="text-gray-400 ml-1">
+                                — tap to view
+                              </span>
                             )}
                           </p>
-                          <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+                          <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-1">
                             {invoices.length === 0 && invoiceCount > 0 ? (
-                              Array.from({ length: Math.min(invoiceCount, 4) }).map((_, i) => (
+                              Array.from({
+                                length: Math.min(invoiceCount, 4),
+                              }).map((_, i) => (
                                 <div
                                   key={i}
                                   className="w-16 h-16 rounded-lg bg-gray-100 dark:bg-gray-800
-                                           flex-shrink-0 border border-gray-200 dark:border-gray-700
-                                           skeleton"
+                                             flex-shrink-0 border border-gray-200 dark:border-gray-700
+                                             skeleton"
                                 />
                               ))
                             ) : (
                               invoices.map((inv, i) => {
-                                const invUrl = inv.thumbnailUrl || inv.url || inv.filePath;
-                                const isImage = /\.(jpg|jpeg|png|webp)$/i.test(inv.originalName || '') ||
-                                                (inv.fileType || '').match(/\.(jpg|jpeg|png|webp)$/i);
+                                const invUrl =
+                                  inv.thumbnailUrl || inv.url || inv.filePath;
+                                const isImage =
+                                  /\.(jpg|jpeg|png|webp)$/i.test(
+                                    inv.originalName || ''
+                                  ) ||
+                                  (inv.fileType || '').match(
+                                    /\.(jpg|jpeg|png|webp)$/i
+                                  );
                                 const invId = inv._id || inv.id;
+                                const isDeleting = deletingInvoiceId === invId;
+
                                 return (
-                                  <div key={invId || i} className="relative flex-shrink-0 group">
+                                  <div
+                                    key={invId || i}
+                                    className="relative flex-shrink-0"
+                                  >
+                                    {/* Clickable thumbnail to open viewer */}
                                     <button
                                       type="button"
-                                      onClick={() => openInvoiceViewer(invoices, i)}
+                                      onClick={() =>
+                                        openInvoiceViewer(invoices, i)
+                                      }
                                       className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100
-                                               dark:bg-gray-800 border border-gray-200
-                                               dark:border-gray-700 hover:border-brand-400
-                                               hover:ring-2 hover:ring-brand-400/50
-                                               transition-all cursor-pointer"
+                                                 dark:bg-gray-800 border border-gray-200
+                                                 dark:border-gray-700 hover:border-brand-400
+                                                 hover:ring-2 hover:ring-brand-400/50
+                                                 transition-all cursor-pointer"
                                     >
                                       {invUrl && isImage ? (
                                         <img
@@ -398,18 +472,25 @@ export default function ServiceHistory({ vehicleId }) {
                                         </div>
                                       )}
                                     </button>
-                                    {/* Delete button overlay */}
+
+                                    {/* Always-visible red X delete button */}
                                     <button
                                       type="button"
-                                      onClick={(e) => handleDeleteInvoice(e, inv)}
-                                      disabled={deletingInvoiceId === invId}
-                                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full
-                                               bg-red-500 text-white flex items-center justify-center
-                                               opacity-0 group-hover:opacity-100 transition-opacity
-                                               hover:bg-red-600 shadow-sm z-10"
+                                      onClick={(e) =>
+                                        handleDeleteInvoice(e, inv)
+                                      }
+                                      disabled={isDeleting}
+                                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full
+                                                 bg-red-500 text-white flex items-center justify-center
+                                                 hover:bg-red-600 active:bg-red-700
+                                                 shadow-md z-10 border-2 border-white dark:border-gray-900"
                                       title="Delete invoice"
                                     >
-                                      <X className="w-3 h-3" />
+                                      {isDeleting ? (
+                                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                      ) : (
+                                        <X className="w-3.5 h-3.5" />
+                                      )}
                                     </button>
                                   </div>
                                 );
@@ -420,14 +501,18 @@ export default function ServiceHistory({ vehicleId }) {
                       )}
 
                       {/* Next due info */}
-                      {(record.nextDueKms != null || record.nextDueDays != null) && (
+                      {(record.nextDueKms != null ||
+                        record.nextDueDays != null) && (
                         <div className="bg-amber-50 dark:bg-amber-950/30 rounded-lg p-3">
                           <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1">
                             Next Service Due
                           </p>
                           <div className="flex gap-4 text-sm text-amber-800 dark:text-amber-300">
                             {record.nextDueKms != null && (
-                              <span>At {Number(record.nextDueKms).toLocaleString()} km</span>
+                              <span>
+                                At{' '}
+                                {Number(record.nextDueKms).toLocaleString()} km
+                              </span>
                             )}
                             {record.nextDueDate && (
                               <span>By {record.nextDueDate}</span>
@@ -475,11 +560,11 @@ export default function ServiceHistory({ vehicleId }) {
           currentIndex={viewerIndex}
           onClose={() => setViewerIndex(null)}
           onNavigate={(idx) => setViewerIndex(idx)}
-          onDeleted={handleInvoiceDeleted}
+          onDeleted={handleInvoiceDeletedFromViewer}
         />
       )}
 
-      {/* Delete confirmation */}
+      {/* Delete service record confirmation modal */}
       <Modal
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
@@ -488,8 +573,8 @@ export default function ServiceHistory({ vehicleId }) {
       >
         <div className="space-y-4">
           <p className="text-gray-600 dark:text-gray-400">
-            Are you sure you want to delete this service record? This action cannot
-            be undone.
+            Are you sure you want to delete this service record? This action
+            cannot be undone.
           </p>
           <div className="flex justify-end gap-3">
             <button
