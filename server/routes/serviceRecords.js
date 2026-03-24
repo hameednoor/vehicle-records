@@ -86,14 +86,36 @@ router.get('/vehicle/:vehicleId', async (req, res) => {
     const db = getDb();
 
     const records = await db.all(
-      `SELECT sr.*, c.name as "categoryName",
-              (SELECT COUNT(*) FROM invoices i WHERE i."serviceRecordId" = sr.id) as "invoiceCount"
+      `SELECT sr.*, c.name as "categoryName"
        FROM service_records sr
        JOIN categories c ON sr."categoryId" = c.id
        WHERE sr."vehicleId" = ?
        ORDER BY sr.date DESC`,
       req.params.vehicleId
     );
+
+    // Fetch all invoices for this vehicle in one query (avoids N+1)
+    const invoices = await db.all(
+      `SELECT i.* FROM invoices i
+       JOIN service_records sr ON i."serviceRecordId" = sr.id
+       WHERE sr."vehicleId" = ?
+       ORDER BY i."uploadedAt" DESC`,
+      req.params.vehicleId
+    );
+
+    // Group invoices by service record
+    const invoiceMap = {};
+    for (const inv of invoices) {
+      const key = inv.serviceRecordId;
+      if (!invoiceMap[key]) invoiceMap[key] = [];
+      invoiceMap[key].push(inv);
+    }
+
+    // Attach invoices and count to each record
+    for (const record of records) {
+      record.invoices = invoiceMap[record.id] || [];
+      record.invoiceCount = record.invoices.length;
+    }
 
     res.json(records);
   } catch (error) {

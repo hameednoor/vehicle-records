@@ -13,6 +13,42 @@ const PORT = process.env.PORT || 3001;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
 
 // ---------------------------------------------------------------------------
+// Simple server-side response cache (reduces DB round-trips on Vercel)
+// ---------------------------------------------------------------------------
+const serverCache = new Map();
+const SERVER_CACHE_TTL = 10_000; // 10 seconds
+
+function getCacheKey(req) {
+  return req.method + ':' + req.originalUrl;
+}
+
+function serverCacheMiddleware(req, res, next) {
+  if (req.method !== 'GET') {
+    // Invalidate cache on mutations
+    serverCache.clear();
+    return next();
+  }
+
+  const key = getCacheKey(req);
+  const entry = serverCache.get(key);
+  if (entry && Date.now() - entry.time < SERVER_CACHE_TTL) {
+    res.setHeader('X-Cache', 'HIT');
+    return res.json(entry.data);
+  }
+
+  // Monkey-patch res.json to cache the response
+  const originalJson = res.json.bind(res);
+  res.json = (data) => {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      serverCache.set(key, { data, time: Date.now() });
+    }
+    res.setHeader('X-Cache', 'MISS');
+    return originalJson(data);
+  };
+  next();
+}
+
+// ---------------------------------------------------------------------------
 // Middleware
 // ---------------------------------------------------------------------------
 
@@ -63,6 +99,9 @@ function mountRoutes() {
   const settingsRoutes = require('./routes/settings');
   const reportRoutes = require('./routes/reports');
   const exchangeRoutes = require('./routes/exchange');
+
+  // Apply server-side cache to all API routes
+  app.use('/api', serverCacheMiddleware);
 
   app.use('/api/vehicles', vehicleRoutes);
   app.use('/api/categories', categoryRoutes);

@@ -12,7 +12,8 @@ const api = axios.create({
 // Shows cached data instantly while refreshing in the background.
 // ---------------------------------------------------------------------------
 const cache = new Map();
-const CACHE_TTL = 120_000; // 2 minutes — longer cache avoids refetches on back/forward nav
+const CACHE_TTL = 120_000; // 2 minutes — max age before cache is discarded
+const CACHE_FRESH = 30_000; // 30 seconds — don't background-refresh within this window
 
 function getCached(key) {
   const entry = cache.get(key);
@@ -21,7 +22,7 @@ function getCached(key) {
     cache.delete(key);
     return null;
   }
-  return entry.data;
+  return entry;
 }
 
 function setCache(key, data) {
@@ -36,11 +37,13 @@ export function invalidateCache(prefix) {
 
 function cachedGet(url, params) {
   const key = url + (params ? JSON.stringify(params) : '');
-  const cached = getCached(key);
-  if (cached) {
-    // Return cached immediately, refresh in background
-    api.get(url, { params }).then((r) => setCache(key, r.data)).catch(() => {});
-    return Promise.resolve(cached);
+  const entry = getCached(key);
+  if (entry) {
+    // Only background-refresh if cache is stale (older than CACHE_FRESH)
+    if (Date.now() - entry.time > CACHE_FRESH) {
+      api.get(url, { params }).then((r) => setCache(key, r.data)).catch(() => {});
+    }
+    return Promise.resolve(entry.data);
   }
   return api.get(url, { params }).then((r) => {
     setCache(key, r.data);

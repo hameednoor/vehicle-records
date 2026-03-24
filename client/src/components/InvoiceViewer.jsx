@@ -10,6 +10,7 @@ import {
   FileText,
   Eye,
   EyeOff,
+  Loader2,
 } from 'lucide-react';
 import { downloadInvoice, deleteInvoice } from '../api';
 import { showSuccess, showError } from './ui/Toast';
@@ -26,6 +27,8 @@ export default function InvoiceViewer({
   const [showOcr, setShowOcr] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [imgLoading, setImgLoading] = useState(true);
+  const [imgError, setImgError] = useState(false);
 
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < invoices.length - 1;
@@ -55,10 +58,12 @@ export default function InvoiceViewer({
     };
   }, [handleKeyDown]);
 
-  // Reset zoom and confirm state on navigation
+  // Reset state on navigation
   useEffect(() => {
     setZoom(1);
     setConfirmDelete(false);
+    setImgLoading(true);
+    setImgError(false);
   }, [currentIndex]);
 
   // Download handler
@@ -272,13 +277,37 @@ export default function InvoiceViewer({
               }}
             />
           ) : imageUrl ? (
-            <img
-              src={imageUrl}
-              alt="Invoice"
-              className="max-w-full max-h-full object-contain transition-transform duration-200"
-              style={{ transform: `scale(${zoom})` }}
-              draggable={false}
-            />
+            <>
+              {imgLoading && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Loader2 className="w-10 h-10 text-white/50 animate-spin" />
+                </div>
+              )}
+              {imgError ? (
+                <div className="text-center">
+                  <FileText className="w-20 h-20 text-white/30 mx-auto mb-4" />
+                  <p className="text-white/50">Failed to load invoice</p>
+                  <button
+                    onClick={() => { setImgError(false); setImgLoading(true); }}
+                    className="mt-3 text-sm text-brand-400 hover:underline"
+                  >
+                    Try again
+                  </button>
+                </div>
+              ) : (
+                <img
+                  src={imageUrl}
+                  alt="Invoice"
+                  className={`max-w-full max-h-full object-contain transition-transform duration-200 ${
+                    imgLoading ? 'opacity-0' : 'opacity-100'
+                  }`}
+                  style={{ transform: `scale(${zoom})` }}
+                  draggable={false}
+                  onLoad={() => setImgLoading(false)}
+                  onError={() => { setImgLoading(false); setImgError(true); }}
+                />
+              )}
+            </>
           ) : (
             <div className="text-center">
               <FileText className="w-20 h-20 text-white/30 mx-auto mb-4" />

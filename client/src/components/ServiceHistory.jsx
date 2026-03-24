@@ -20,7 +20,6 @@ import {
   getVehicleServiceRecords,
   getCategories,
   deleteServiceRecord,
-  getServiceInvoices,
   deleteInvoice,
 } from '../api';
 import InvoiceViewer from './InvoiceViewer';
@@ -118,22 +117,18 @@ export default function ServiceHistory({ vehicleId }) {
     return list;
   }, [records, filterCategory, sortBy, categories]);
 
-  const handleExpand = async (recordId) => {
+  const handleExpand = (recordId) => {
     if (expandedId === recordId) {
       setExpandedId(null);
       return;
     }
     setExpandedId(recordId);
+    // Invoices are now embedded in each record from the server response,
+    // so no separate API call needed. Pre-populate expandedInvoices from record data.
     if (!expandedInvoices[recordId]) {
-      try {
-        const data = await getServiceInvoices(recordId);
-        const list = Array.isArray(data)
-          ? data
-          : data?.invoices || data?.data || [];
-        setExpandedInvoices((prev) => ({ ...prev, [recordId]: list }));
-      } catch {
-        setExpandedInvoices((prev) => ({ ...prev, [recordId]: [] }));
-      }
+      const record = records.find((r) => (r._id || r.id) === recordId);
+      const embedded = record?.invoices || [];
+      setExpandedInvoices((prev) => ({ ...prev, [recordId]: embedded }));
     }
   };
 

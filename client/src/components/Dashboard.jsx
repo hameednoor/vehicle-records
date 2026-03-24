@@ -147,7 +147,7 @@ export default function Dashboard() {
     },
     {
       label: 'Total Spend (AED)',
-      value: `AED ${stats.totalSpend.toLocaleString()}`,
+      value: stats.totalSpend.toLocaleString(),
       icon: AedIcon,
       color: 'text-violet-700 dark:text-violet-400',
       bg: 'bg-violet-50 dark:bg-violet-950/50',

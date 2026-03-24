@@ -20,21 +20,18 @@ router.get('/', async (req, res) => {
     const now = new Date();
     const monthStartStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 
+    // Single aggregation query — avoids 6 correlated subqueries per vehicle
     const vehicles = await db.all(
       `SELECT v.*,
-        (SELECT MAX(sr.date) FROM service_records sr WHERE sr."vehicleId" = v.id) as "lastServiceDate",
-        (SELECT c.name FROM service_records sr
-         JOIN categories c ON sr."categoryId" = c.id
-         WHERE sr."vehicleId" = v.id
-         ORDER BY sr.date DESC LIMIT 1) as "lastServiceCategory",
-        (SELECT MIN(sr."nextDueDate") FROM service_records sr
-         WHERE sr."vehicleId" = v.id AND sr."nextDueDate" IS NOT NULL) as "nextMaintenanceDate",
-        (SELECT MIN(sr."nextDueKms") FROM service_records sr
-         WHERE sr."vehicleId" = v.id AND sr."nextDueKms" IS NOT NULL) as "nextMaintenanceKms",
-        (SELECT COUNT(*) FROM service_records sr WHERE sr."vehicleId" = v.id) as "totalServices",
-        (SELECT COALESCE(SUM(sr.cost), 0) FROM service_records sr WHERE sr."vehicleId" = v.id) as "totalSpend",
-        (SELECT COUNT(*) FROM service_records sr WHERE sr."vehicleId" = v.id AND sr.date >= '${monthStartStr}') as "servicesThisMonth"
+        MAX(sr.date) as "lastServiceDate",
+        MIN(CASE WHEN sr."nextDueDate" IS NOT NULL THEN sr."nextDueDate" END) as "nextMaintenanceDate",
+        MIN(CASE WHEN sr."nextDueKms" IS NOT NULL THEN sr."nextDueKms" END) as "nextMaintenanceKms",
+        COUNT(sr.id) as "totalServices",
+        COALESCE(SUM(sr.cost), 0) as "totalSpend",
+        COUNT(CASE WHEN sr.date >= '${monthStartStr}' THEN 1 END) as "servicesThisMonth"
        FROM vehicles v
+       LEFT JOIN service_records sr ON sr."vehicleId" = v.id
+       GROUP BY v.id
        ORDER BY v."updatedAt" DESC`
     );
 

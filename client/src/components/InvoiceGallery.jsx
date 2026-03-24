@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import {
   getVehicleServiceRecords,
-  getServiceInvoices,
   searchInvoices,
   deleteInvoice,
 } from '../api';
@@ -45,25 +44,7 @@ export default function InvoiceGallery({ vehicleId }) {
       const allInvoices = [];
       const catSet = new Map();
 
-      // Fetch actual invoice data for records that have invoices
-      const invoiceFetches = records
-        .filter((r) => (r.invoiceCount || 0) > 0)
-        .map(async (record) => {
-          const recordId = record._id || record.id;
-          try {
-            const invData = await getServiceInvoices(recordId);
-            const recordInvoices = Array.isArray(invData)
-              ? invData
-              : invData?.invoices || invData?.data || [];
-            return { record, invoices: recordInvoices };
-          } catch {
-            return { record, invoices: [] };
-          }
-        });
-
-      const fetchedResults = await Promise.all(invoiceFetches);
-
-      // Track categories from all records
+      // Invoices are now embedded in each service record — no extra API calls needed
       for (const record of records) {
         const categoryName =
           typeof record.category === 'object'
@@ -77,23 +58,11 @@ export default function InvoiceGallery({ vehicleId }) {
         if (!catSet.has(categoryId)) {
           catSet.set(categoryId, categoryName);
         }
-      }
 
-      // Build flat invoice list with service record metadata
-      for (const { record, invoices: recordInvoices } of fetchedResults) {
-        const categoryName =
-          typeof record.category === 'object'
-            ? record.category?.name
-            : record.categoryName || 'Uncategorized';
-        const categoryId =
-          typeof record.category === 'object'
-            ? record.category?._id || record.category?.id
-            : record.categoryId || record.category_id || 'uncategorized';
-
+        const recordInvoices = record.invoices || [];
         recordInvoices.forEach((inv) => {
           allInvoices.push({
             ...inv,
-            url: inv.filePath,
             serviceDate: record.date || record.serviceDate,
             categoryName,
             categoryId,
