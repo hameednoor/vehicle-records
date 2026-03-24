@@ -24,6 +24,20 @@ import { VehicleCardSkeleton, StatCardSkeleton } from './ui/LoadingSkeleton';
 import { showError } from './ui/Toast';
 import { format } from 'date-fns';
 
+// Determine if a reminder item is truly overdue (date in the past or KMs exceeded)
+function isItemOverdue(item) {
+  if (item.nextDueDate) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dueDate = new Date(item.nextDueDate + 'T00:00:00');
+    if (dueDate < today) return true;
+  }
+  if (item.nextDueKms != null && item.currentKms != null) {
+    if (Number(item.nextDueKms) <= Number(item.currentKms)) return true;
+  }
+  return false;
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [vehicles, setVehicles] = useState([]);
@@ -78,7 +92,7 @@ export default function Dashboard() {
       const vid = item.vehicleId || item.vehicle_id;
       if (!vid) return;
       const existing = statusMap[vid];
-      if (Number(item.isOverdue) === 1 || item.is_overdue === true) {
+      if (isItemOverdue(item)) {
         statusMap[vid] = 'overdue';
       } else if (existing !== 'overdue') {
         statusMap[vid] = 'due-soon';
@@ -97,9 +111,11 @@ export default function Dashboard() {
     const totalSpend = vehicleList.reduce((sum, v) => {
       return sum + Number(v.totalSpend || v.total_spend || 0);
     }, 0);
-    const upcomingDue = Array.isArray(upcoming) ? upcoming.length : 0;
+    const upcomingList = Array.isArray(upcoming) ? upcoming : [];
+    const overdueCount = upcomingList.filter(u => isItemOverdue(u)).length;
+    const upcomingDue = upcomingList.length;
 
-    return { totalVehicles, servicesThisMonth, totalSpend, upcomingDue };
+    return { totalVehicles, servicesThisMonth, totalSpend, upcomingDue, overdueCount };
   }, [vehicles, upcoming]);
 
   // Filtered and sorted vehicles
@@ -200,8 +216,8 @@ export default function Dashboard() {
       {/* Reminders Section — always visible */}
       {!loading && (() => {
         const list = Array.isArray(upcoming) ? upcoming : [];
-        const overdue = list.filter(u => Number(u.isOverdue) === 1 || u.is_overdue === true);
-        const dueSoon = list.filter(u => !(Number(u.isOverdue) === 1 || u.is_overdue === true));
+        const overdue = list.filter(u => isItemOverdue(u));
+        const dueSoon = list.filter(u => !isItemOverdue(u));
         const hasItems = list.length > 0;
 
         return (
@@ -319,7 +335,7 @@ export default function Dashboard() {
              onKeyDown={(e) => { if (e.key === 'Escape') setShowReminders(false); }}>
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
                onClick={() => setShowReminders(false)} aria-hidden="true" />
-          <div className="relative w-full max-w-2xl bg-white dark:bg-gray-900 rounded-2xl shadow-2xl
+          <div className="relative w-full max-w-3xl bg-white dark:bg-gray-900 rounded-2xl shadow-2xl
                           animate-scale-in border border-gray-200 dark:border-gray-800 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800">
               <h2 id="reminders-modal-title" className="text-lg font-semibold text-gray-900 dark:text-gray-50">
@@ -335,20 +351,20 @@ export default function Dashboard() {
               ) : (
                 [...upcoming].sort((a, b) => {
                   // Overdue items first, then by date ascending (soonest first)
-                  const aOverdue = Number(a.isOverdue) === 1 || a.is_overdue === true;
-                  const bOverdue = Number(b.isOverdue) === 1 || b.is_overdue === true;
+                  const aOverdue = isItemOverdue(a);
+                  const bOverdue = isItemOverdue(b);
                   if (aOverdue && !bOverdue) return -1;
                   if (!aOverdue && bOverdue) return 1;
                   const aDate = a.nextDueDate || '9999-12-31';
                   const bDate = b.nextDueDate || '9999-12-31';
                   return aDate.localeCompare(bDate);
                 }).map((item, idx) => {
-                  const isOverdue = Number(item.isOverdue) === 1 || item.is_overdue === true;
+                  const overdue = isItemOverdue(item);
                   return (
                     <div
                       key={item.id || idx}
                       className={`p-4 rounded-xl border ${
-                        isOverdue
+                        overdue
                           ? 'border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/20'
                           : 'border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/20'
                       }`}
@@ -367,23 +383,29 @@ export default function Dashboard() {
                       tabIndex={0}
                       style={{ cursor: 'pointer' }}
                     >
-                      <div className="flex items-center justify-between">
-                        <div>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0 flex-1">
                           <p className="font-semibold text-sm text-gray-900 dark:text-gray-50">
                             {item.categoryName || item.category_name || 'Maintenance'}
                           </p>
                           <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
                             {item.vehicleName || item.vehicle_name}
                           </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                            Last done: {item.date || '-'}
+                            {item.kmsAtService != null && Number(item.kmsAtService) > 0
+                              ? ` at ${Number(item.kmsAtService).toLocaleString()} km`
+                              : ''}
+                          </p>
                         </div>
-                        <div className="text-right">
+                        <div className="text-right shrink-0">
                           {item.nextDueDate && (() => {
                             const today = new Date();
                             today.setHours(0, 0, 0, 0);
                             const target = new Date(item.nextDueDate + 'T00:00:00');
                             const daysLeft = Math.round((target - today) / (1000 * 60 * 60 * 24));
                             return (
-                              <p className={`text-xs font-medium ${isOverdue ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                              <p className={`text-xs font-medium ${overdue ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>
                                 {item.nextDueDate}
                                 {daysLeft < 0
                                   ? ` (${Math.abs(daysLeft)}d overdue)`
