@@ -525,6 +525,16 @@ function getCreateTablesSql() {
         "createdAt" TIMESTAMP DEFAULT NOW(),
         "updatedAt" TIMESTAMP DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        "pinHash" TEXT NOT NULL,
+        role TEXT DEFAULT 'driver',
+        "isActive" INTEGER DEFAULT 1,
+        "lastLoginAt" TIMESTAMP,
+        "createdAt" TIMESTAMP DEFAULT NOW()
+      );
     `;
   }
 
@@ -616,6 +626,16 @@ function getCreateTablesSql() {
       reminderBufferDays INTEGER DEFAULT 7,
       createdAt TEXT DEFAULT (datetime('now')),
       updatedAt TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      pinHash TEXT NOT NULL,
+      role TEXT CHECK(role IN ('admin', 'driver')) DEFAULT 'driver',
+      isActive INTEGER DEFAULT 1,
+      lastLoginAt TEXT,
+      createdAt TEXT DEFAULT (datetime('now'))
     );
   `;
 }

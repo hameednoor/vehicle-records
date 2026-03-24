@@ -1,5 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const { getDb, initDb } = require('./database');
+const { hashPin } = require('../utils/auth');
 
 const SERVICE_INTERVALS = {
   'Oil Change': { kms: 10000, days: 180 },
@@ -111,6 +112,28 @@ async function seed() {
     console.log('Seeded default settings.');
   } else {
     console.log('Settings table already has data, skipping seed.');
+  }
+
+  // Seed users if empty
+  const userCount = await db.get('SELECT COUNT(*) as count FROM users');
+  if (Number(userCount.count) === 0) {
+    await db.run(
+      'INSERT INTO users (id, name, "pinHash", role, "isActive") VALUES (?, ?, ?, ?, 1)',
+      uuidv4(),
+      'Hameed',
+      hashPin('1234'),
+      'admin'
+    );
+    await db.run(
+      'INSERT INTO users (id, name, "pinHash", role, "isActive") VALUES (?, ?, ?, ?, 1)',
+      uuidv4(),
+      'Driver',
+      hashPin('0000'),
+      'driver'
+    );
+    console.log('Seeded 2 default users (Hameed: admin/1234, Driver: driver/0000).');
+  } else {
+    console.log('Users table already has data, skipping seed.');
   }
 }
 

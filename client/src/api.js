@@ -51,9 +51,48 @@ function cachedGet(url, params) {
   });
 }
 
-// Request interceptor: automatically remove Content-Type for FormData
-// so the browser sets the correct multipart boundary
+// ---------------------------------------------------------------------------
+// Auth token management
+// ---------------------------------------------------------------------------
+const TOKEN_KEY = 'vmt_auth_token';
+const USER_KEY = 'vmt_auth_user';
+
+export function getStoredToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function getStoredUser() {
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function storeAuth(token, user) {
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
+export function clearAuth() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+  cache.clear();
+}
+
+// Callback for 401 responses — set by AuthContext
+let onUnauthorized = null;
+export function setOnUnauthorized(fn) {
+  onUnauthorized = fn;
+}
+
+// Request interceptor: attach auth token + remove Content-Type for FormData
 api.interceptors.request.use((config) => {
+  const token = getStoredToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
   if (config.data instanceof FormData) {
     delete config.headers['Content-Type'];
   }
@@ -64,6 +103,11 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // On 401, trigger logout
+    if (error.response?.status === 401 && onUnauthorized) {
+      onUnauthorized();
+    }
+
     const data = error.response?.data;
     let message;
 
@@ -81,6 +125,32 @@ api.interceptors.response.use(
     return Promise.reject(new Error(message));
   }
 );
+
+// ============ Auth ============
+export const login = (name, pin) =>
+  api.post('/auth/login', { name, pin }).then((r) => r.data);
+
+export const getMe = () =>
+  api.get('/auth/me').then((r) => r.data);
+
+export const changePin = (currentPin, newPin) =>
+  api.put('/auth/change-pin', { currentPin, newPin }).then((r) => r.data);
+
+// ============ Users (admin) ============
+export const getUsers = () =>
+  api.get('/users').then((r) => r.data);
+
+export const createUser = (data) =>
+  api.post('/users', data).then((r) => r.data);
+
+export const updateUser = (id, data) =>
+  api.put(`/users/${id}`, data).then((r) => r.data);
+
+export const resetUserPin = (id, pin) =>
+  api.put(`/users/${id}/reset-pin`, { pin }).then((r) => r.data);
+
+export const deleteUser = (id) =>
+  api.delete(`/users/${id}`).then((r) => r.data);
 
 // ============ Vehicles ============
 export const getVehicles = () => cachedGet('/vehicles');

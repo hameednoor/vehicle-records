@@ -14,8 +14,9 @@ import {
   Plus,
   Info,
   HelpCircle,
+  Lock,
 } from 'lucide-react';
-import { getSettings, updateSettings, exportData, importData } from '../api';
+import { getSettings, updateSettings, exportData, importData, changePin } from '../api';
 import { Skeleton } from './ui/LoadingSkeleton';
 import { showSuccess, showError, showLoading, dismissToast } from './ui/Toast';
 
@@ -46,6 +47,96 @@ const timezones = [
   'Australia/Sydney',
   'Pacific/Auckland',
 ];
+
+function PinChangeCard() {
+  const [currentPin, setCurrentPin] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleChangePin = async () => {
+    if (!currentPin || !newPin) {
+      showError('Please fill in all fields');
+      return;
+    }
+    if (!/^\d{4,6}$/.test(newPin)) {
+      showError('New PIN must be 4-6 digits');
+      return;
+    }
+    if (newPin !== confirmPin) {
+      showError('New PINs do not match');
+      return;
+    }
+    setSaving(true);
+    try {
+      await changePin(currentPin, newPin);
+      showSuccess('PIN changed successfully');
+      setCurrentPin('');
+      setNewPin('');
+      setConfirmPin('');
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="card p-6 space-y-5">
+      <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-50 flex items-center gap-2">
+        <Lock className="w-4 h-4 text-brand-600 dark:text-brand-400" />
+        Change PIN
+      </h2>
+      <div className="space-y-3">
+        <div>
+          <label className="label">Current PIN</label>
+          <input
+            type="password"
+            inputMode="numeric"
+            pattern="\d*"
+            maxLength={6}
+            className="input max-w-xs"
+            value={currentPin}
+            onChange={(e) => setCurrentPin(e.target.value.replace(/\D/g, ''))}
+            placeholder="Enter current PIN"
+          />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="label">New PIN</label>
+            <input
+              type="password"
+              inputMode="numeric"
+              pattern="\d*"
+              maxLength={6}
+              className="input"
+              value={newPin}
+              onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))}
+              placeholder="4-6 digits"
+            />
+          </div>
+          <div>
+            <label className="label">Confirm New PIN</label>
+            <input
+              type="password"
+              inputMode="numeric"
+              pattern="\d*"
+              maxLength={6}
+              className="input"
+              value={confirmPin}
+              onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+              placeholder="Repeat new PIN"
+            />
+          </div>
+        </div>
+        <button onClick={handleChangePin} className="btn-secondary text-sm" disabled={saving}>
+          <Lock className="w-4 h-4" />
+          {saving ? 'Changing...' : 'Change PIN'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function Settings() {
   const [loading, setLoading] = useState(true);
@@ -373,6 +464,9 @@ export default function Settings() {
           {saving ? 'Saving...' : 'Save Settings'}
         </button>
       </div>
+
+      {/* Change PIN */}
+      <PinChangeCard />
 
       {/* Data Management */}
       <div className="card p-6 space-y-5">

@@ -95,6 +95,8 @@ if (process.env.NODE_ENV === 'production') {
 // ---------------------------------------------------------------------------
 
 function mountRoutes() {
+  const authRoutes = require('./routes/auth');
+  const userRoutes = require('./routes/users');
   const vehicleRoutes = require('./routes/vehicles');
   const categoryRoutes = require('./routes/categories');
   const serviceRecordRoutes = require('./routes/serviceRecords');
@@ -104,19 +106,25 @@ function mountRoutes() {
   const settingsRoutes = require('./routes/settings');
   const reportRoutes = require('./routes/reports');
   const exchangeRoutes = require('./routes/exchange');
+  const { requireAuth } = require('./middleware/auth');
 
   // Apply server-side cache to all API routes
   app.use('/api', serverCacheMiddleware);
 
-  app.use('/api/vehicles', vehicleRoutes);
-  app.use('/api/categories', categoryRoutes);
-  app.use('/api/service-records', serviceRecordRoutes);
-  app.use('/api/invoices', invoiceRoutes);
-  app.use('/api/km-logs', kmLogRoutes);
-  app.use('/api/reminders', reminderRoutes);
-  app.use('/api/settings', settingsRoutes);
-  app.use('/api/reports', reportRoutes);
-  app.use('/api/exchange', exchangeRoutes);
+  // Auth routes (public — no token required)
+  app.use('/api/auth', authRoutes);
+
+  // All other routes require authentication
+  app.use('/api/users', userRoutes);
+  app.use('/api/vehicles', requireAuth, vehicleRoutes);
+  app.use('/api/categories', requireAuth, categoryRoutes);
+  app.use('/api/service-records', requireAuth, serviceRecordRoutes);
+  app.use('/api/invoices', requireAuth, invoiceRoutes);
+  app.use('/api/km-logs', requireAuth, kmLogRoutes);
+  app.use('/api/reminders', requireAuth, reminderRoutes);
+  app.use('/api/settings', requireAuth, settingsRoutes);
+  app.use('/api/reports', requireAuth, reportRoutes);
+  app.use('/api/exchange', requireAuth, exchangeRoutes);
 
   // Health check endpoint
   app.get('/api/health', async (req, res) => {

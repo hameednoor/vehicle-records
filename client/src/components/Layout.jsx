@@ -14,18 +14,27 @@ import {
   Wrench,
   Gauge,
   ChevronDown,
+  Users,
+  LogOut,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import { getVehicles } from '../api';
 import KmUpdateModal from './KmUpdateModal';
 
-const navItems = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/vehicles/new', label: 'Add Vehicle', icon: Car },
-  { to: '/categories', label: 'Categories', icon: Tags },
-  { to: '/reports', label: 'Reports', icon: BarChart3 },
-  { to: '/settings', label: 'Settings', icon: Settings },
-];
+function getNavItems(isAdmin) {
+  const items = [
+    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/vehicles/new', label: 'Add Vehicle', icon: Car },
+    { to: '/categories', label: 'Categories', icon: Tags },
+    { to: '/reports', label: 'Reports', icon: BarChart3 },
+    { to: '/settings', label: 'Settings', icon: Settings },
+  ];
+  if (isAdmin) {
+    items.push({ to: '/users', label: 'Users', icon: Users });
+  }
+  return items;
+}
 
 function QuickActions({ onLogService, onUpdateKms }) {
   const [open, setOpen] = useState(false);
@@ -145,6 +154,9 @@ function VehiclePickerModal({ open, onClose, onSelect, title }) {
 }
 
 function Sidebar({ open, onClose }) {
+  const { isAdmin, user, logout } = useAuth();
+  const navItems = getNavItems(isAdmin);
+
   return (
     <>
       {open && (
@@ -198,9 +210,24 @@ function Sidebar({ open, onClose }) {
             </NavLink>
           ))}
         </nav>
-        <div className="px-5 py-4 border-t border-white/10">
-          <p className="text-white/40 text-xs">Vehicle Maintenance Tracker</p>
-          <p className="text-white/30 text-xs mt-0.5">v1.0.0</p>
+
+        {/* User info + logout */}
+        <div className="px-4 py-3 border-t border-white/10">
+          {user && (
+            <div className="flex items-center justify-between">
+              <div className="min-w-0">
+                <p className="text-white text-sm font-medium truncate">{user.name}</p>
+                <p className="text-white/40 text-xs capitalize">{user.role}</p>
+              </div>
+              <button
+                onClick={logout}
+                className="p-2 text-white/50 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                title="Sign out"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
       </aside>
     </>
@@ -210,6 +237,7 @@ function Sidebar({ open, onClose }) {
 export default function Layout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { isDark, toggleTheme } = useTheme();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   // Vehicle picker for quick actions
@@ -253,6 +281,11 @@ export default function Layout({ children }) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            {user && (
+              <span className="hidden md:inline text-xs text-gray-500 dark:text-gray-400">
+                {user.name}
+              </span>
+            )}
             <button
               onClick={toggleTheme}
               className="btn-icon"
