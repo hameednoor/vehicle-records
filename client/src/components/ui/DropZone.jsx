@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, X, FileText, Image as ImageIcon } from 'lucide-react';
+import { Upload, X, FileText, Image as ImageIcon, Camera } from 'lucide-react';
 import { showError } from './Toast';
 
 export default function DropZone({
@@ -31,6 +31,17 @@ export default function DropZone({
     },
     [onFilesSelected]
   );
+
+  const cameraInputRef = useRef(null);
+
+  const handleCameraCapture = (e) => {
+    const capturedFiles = Array.from(e.target.files || []);
+    if (capturedFiles.length > 0 && onFilesSelected) {
+      onFilesSelected(capturedFiles);
+    }
+    // Reset so the same file can be captured again
+    e.target.value = '';
+  };
 
   const { getRootProps, getInputProps, isDragActive, isDragReject } = useDropzone({
     onDrop,
@@ -69,47 +80,76 @@ export default function DropZone({
 
   return (
     <div className="space-y-3">
-      {/* Drop zone */}
-      <div
-        {...getRootProps()}
-        className={`
-          relative border-2 border-dashed rounded-xl cursor-pointer
-          transition-all duration-200 text-center
-          ${compact ? 'p-4' : 'p-6 sm:p-8'}
-          ${
-            isDragActive && !isDragReject
-              ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/30'
-              : isDragReject
-              ? 'border-red-400 bg-red-50 dark:bg-red-950/30'
-              : 'border-gray-300 dark:border-gray-700 hover:border-brand-400 hover:bg-gray-50 dark:hover:bg-gray-800/50'
-          }
-        `}
-      >
-        <input {...getInputProps()} />
-        <div className="flex flex-col items-center gap-2">
-          <div
-            className={`
-              p-3 rounded-full
-              ${isDragActive ? 'bg-brand-100 dark:bg-brand-900' : 'bg-gray-100 dark:bg-gray-800'}
-            `}
-          >
-            <Upload
-              className={`w-5 h-5 ${
-                isDragActive
-                  ? 'text-brand-600 dark:text-brand-400'
-                  : 'text-gray-400 dark:text-gray-500'
-              }`}
-            />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              {isDragActive ? 'Drop files here' : label}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              PNG, JPG, WEBP, or PDF{maxFiles > 1 ? ` (up to ${maxFiles} files)` : ''}
-            </p>
+      {/* Hidden camera input */}
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleCameraCapture}
+      />
+
+      {/* Drop zone and camera button */}
+      <div className="flex gap-2">
+        <div
+          {...getRootProps()}
+          className={`
+            flex-1 relative border-2 border-dashed rounded-xl cursor-pointer
+            transition-all duration-200 text-center
+            ${compact ? 'p-4' : 'p-6 sm:p-8'}
+            ${
+              isDragActive && !isDragReject
+                ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/30'
+                : isDragReject
+                ? 'border-red-400 bg-red-50 dark:bg-red-950/30'
+                : 'border-gray-300 dark:border-gray-700 hover:border-brand-400 hover:bg-gray-50 dark:hover:bg-gray-800/50'
+            }
+          `}
+        >
+          <input {...getInputProps()} />
+          <div className="flex flex-col items-center gap-2">
+            <div
+              className={`
+                p-3 rounded-full
+                ${isDragActive ? 'bg-brand-100 dark:bg-brand-900' : 'bg-gray-100 dark:bg-gray-800'}
+              `}
+            >
+              <Upload
+                className={`w-5 h-5 ${
+                  isDragActive
+                    ? 'text-brand-600 dark:text-brand-400'
+                    : 'text-gray-400 dark:text-gray-500'
+                }`}
+              />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                {isDragActive ? 'Drop files here' : label}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                PNG, JPG, WEBP, or PDF{maxFiles > 1 ? ` (up to ${maxFiles} files)` : ''}
+              </p>
+            </div>
           </div>
         </div>
+
+        {/* Camera button */}
+        <button
+          type="button"
+          onClick={() => cameraInputRef.current?.click()}
+          className="flex flex-col items-center justify-center gap-2 px-4 border-2 border-dashed
+                     border-gray-300 dark:border-gray-700 rounded-xl cursor-pointer
+                     hover:border-brand-400 hover:bg-gray-50 dark:hover:bg-gray-800/50
+                     transition-all duration-200"
+        >
+          <div className="p-3 rounded-full bg-gray-100 dark:bg-gray-800">
+            <Camera className="w-5 h-5 text-gray-400 dark:text-gray-500" />
+          </div>
+          <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+            Camera
+          </p>
+        </button>
       </div>
 
       {/* File previews */}
