@@ -468,16 +468,23 @@ export default function ServiceForm() {
               setInvoiceDetected(null);
 
               const analyzeAll = imageFiles.map((file) =>
-                analyzeInvoiceBrowser(file).catch(() => null)
+                analyzeInvoiceBrowser(file).catch((err) => {
+                  console.error('[OCR] Analysis failed for', file.name, err);
+                  return null;
+                })
               );
 
               Promise.all(analyzeAll)
                 .then((results) => {
+                  console.log('[OCR] All results:', results);
+
                   let batchCost = 0;
                   let detectedCurrency = null;
+                  let anyResult = false;
 
                   for (const result of results) {
                     if (!result) continue;
+                    anyResult = true;
                     if (result.cost) batchCost += result.cost;
                     if (result.currency && !detectedCurrency) {
                       const validCode = currencies.find(
@@ -508,9 +515,19 @@ export default function ServiceForm() {
                     if (detectedCurrency) parts.push(detectedCurrency);
                     if (newTotal) parts.push(newTotal.toLocaleString());
                     if (parts.length > 0) {
-                      showSuccess(`Detected from invoice${imageFiles.length > 1 ? 's' : ''}: ${parts.join(' ')}`);
+                      showSuccess(
+                        `Detected from invoice${imageFiles.length > 1 ? 's' : ''}: ${parts.join(' ')}`
+                      );
                     }
+                  } else if (!anyResult) {
+                    showError('Could not read invoice text. Try a clearer photo.');
+                  } else {
+                    showSuccess('Invoice scanned but no cost found. Enter cost manually.');
                   }
+                })
+                .catch((err) => {
+                  console.error('[OCR] Promise.all failed:', err);
+                  showError('Invoice scanning failed. Enter cost manually.');
                 })
                 .finally(() => setAnalyzingInvoice(false));
             }}
