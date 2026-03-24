@@ -1,16 +1,16 @@
 /**
  * Invoice analysis via server-side Gemini AI.
- * Sends the file to the server API which uses Google Gemini to extract
- * cost, currency, and provider from invoice images.
+ * Images are compressed client-side before upload for speed.
  */
 import { analyzeInvoice } from '../api';
+import { compressImage } from './imageCompress';
 
 /**
  * Analyze an invoice file by sending it to the server for Gemini AI processing.
+ * Images are compressed first for faster upload.
  * Returns { cost, currency, provider, rawText }
  */
 export async function analyzeInvoiceBrowser(file) {
-  // Support images and PDFs
   const isImage =
     file.type?.startsWith('image/') ||
     /\.(jpg|jpeg|png|webp|heic|bmp|tiff|gif)$/i.test(file.name);
@@ -23,10 +23,12 @@ export async function analyzeInvoiceBrowser(file) {
     return { cost: null, currency: null, provider: null, rawText: null };
   }
 
-  console.log('[OCR] Sending to Gemini AI:', file.name, 'size:', file.size);
-
   try {
-    const result = await analyzeInvoice(file);
+    const fileToSend = isImage ? await compressImage(file) : file;
+
+    console.log('[OCR] Sending to Gemini AI:', fileToSend.name, 'size:', Math.round(fileToSend.size / 1024), 'KB');
+
+    const result = await analyzeInvoice(fileToSend);
 
     console.log('[OCR] Gemini result — cost:', result.cost, 'currency:', result.currency, 'provider:', result.provider);
 

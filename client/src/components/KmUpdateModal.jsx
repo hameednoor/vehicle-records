@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { Gauge, Save, Camera, Upload, Keyboard, X, Loader2, ScanLine, RotateCcw } from 'lucide-react';
 import { updateKms, analyzeOdometer } from '../api';
+import { compressImage } from '../services/imageCompress';
 import Modal from './ui/Modal';
 import { showSuccess, showError } from './ui/Toast';
 import { format } from 'date-fns';
@@ -65,21 +66,21 @@ export default function KmUpdateModal({ vehicle, onClose, onUpdated }) {
   );
 
   const handleFileSelect = useCallback(
-    (e) => {
+    async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
 
-      setSelectedFile(file);
-
-      // Show preview
+      // Show preview immediately
       const reader = new FileReader();
       reader.onload = (ev) => {
         setImagePreview(ev.target.result);
       };
       reader.readAsDataURL(file);
 
-      // Send to server for AI analysis
-      runOcr(file);
+      // Compress and send to server for AI analysis
+      const compressed = await compressImage(file);
+      setSelectedFile(compressed);
+      runOcr(compressed);
     },
     [runOcr]
   );
