@@ -1,14 +1,11 @@
-const twilio = require('twilio');
-
-// Initialize Twilio client from env vars
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
-const twilioFrom = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
-
+// Lazy-load twilio to speed up cold starts
 let client = null;
 
 function getClient() {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
   if (!client && accountSid && authToken) {
+    const twilio = require('twilio');
     client = twilio(accountSid, authToken);
   }
   return client;
@@ -32,6 +29,8 @@ async function sendWhatsApp(phone, message) {
     console.warn('WhatsApp not sent: Twilio credentials not configured.');
     return null;
   }
+
+  const twilioFrom = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
 
   // Ensure phone is in whatsapp:+... format
   let normalizedPhone = phone.trim();

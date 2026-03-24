@@ -3,6 +3,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "client/dist",
   "installCommand": "npm install && cd server && npm install && cd ../client && npm install --include=dev",
+  "regions": ["hnd1"],
   "functions": {
     "api/index.js": {
       "memory": 1024,
@@ -14,5 +15,11 @@
     { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/uploads/(.*)", "destination": "/api" },
     { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    {
+      "path": "/api/health",
+      "schedule": "*/5 * * * *"
+    }
   ]
 }

@@ -1,4 +1,5 @@
-const nodemailer = require('nodemailer');
+// Lazy-load nodemailer to speed up cold starts
+let nodemailer;
 
 const BRAND_COLOR = '#1B4F72';
 const BRAND_LIGHT = '#2E86C1';
@@ -43,6 +44,7 @@ function createTransporter(config = {}) {
     return null;
   }
 
+  if (!nodemailer) nodemailer = require('nodemailer');
   return nodemailer.createTransport(options);
 }
 

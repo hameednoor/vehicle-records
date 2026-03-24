@@ -1,6 +1,7 @@
-const cron = require('node-cron');
-const { sendMaintenanceReminder, sendKmLogReminder } = require('./email');
-const { sendMaintenanceWhatsApp, sendKmLogWhatsApp } = require('./whatsapp');
+// Lazy-load to speed up cold starts
+let cron, emailService, whatsappService;
+function getEmail() { if (!emailService) emailService = require('./email'); return emailService; }
+function getWhatsApp() { if (!whatsappService) whatsappService = require('./whatsapp'); return whatsappService; }
 
 let schedulerTask = null;
 // Track sent reminders to avoid flooding (key: "recordId-date", resets daily)
@@ -29,6 +30,7 @@ function startScheduler(db) {
   console.log('Starting reminder scheduler (runs every hour)...');
 
   // Run every hour at minute 0
+  if (!cron) cron = require('node-cron');
   schedulerTask = cron.schedule('0 * * * *', () => {
     runReminderChecks(db);
   });
@@ -143,7 +145,7 @@ async function checkDefaultReminders(db) {
 
     // Send email if default emails exist
     if (defaultEmails.length > 0) {
-      sendMaintenanceReminder(vehicle, record, category).catch((err) => {
+      getEmail().sendMaintenanceReminder(vehicle, record, category).catch((err) => {
         sentToday.delete(sentKey);
         console.error(`Failed to send default maintenance email:`, err.message);
       });
@@ -151,7 +153,7 @@ async function checkDefaultReminders(db) {
 
     // Send WhatsApp if default number exists
     if (defaultWhatsApp) {
-      sendMaintenanceWhatsApp(vehicle, record, category, defaultWhatsApp).catch((err) => {
+      getWhatsApp().sendMaintenanceWhatsApp(vehicle, record, category, defaultWhatsApp).catch((err) => {
         console.error(`Failed to send default maintenance WhatsApp:`, err.message);
       });
     }
@@ -230,7 +232,7 @@ async function checkMaintenanceReminders(db) {
 
         // Send email if channel is 'email' or 'both'
         if (channel === 'email' || channel === 'both') {
-          sendMaintenanceReminder(vehicle, record, category).catch((err) => {
+          getEmail().sendMaintenanceReminder(vehicle, record, category).catch((err) => {
             sentToday.delete(sentKey);
             console.error(`Failed to send maintenance reminder:`, err.message);
           });
@@ -239,7 +241,7 @@ async function checkMaintenanceReminders(db) {
         // Send WhatsApp if channel is 'whatsapp' or 'both'
         if (channel === 'whatsapp' || channel === 'both') {
           const waPhone = settings.whatsappNumber;
-          sendMaintenanceWhatsApp(vehicle, record, category, waPhone).catch((err) => {
+          getWhatsApp().sendMaintenanceWhatsApp(vehicle, record, category, waPhone).catch((err) => {
             console.error(`Failed to send maintenance WhatsApp reminder:`, err.message);
           });
         }
@@ -317,7 +319,7 @@ async function checkKmLogReminders(db) {
         // Send email if channel is 'email' or 'both'
         const channel = config.channel || 'email';
         if (channel === 'email' || channel === 'both') {
-          sendKmLogReminder(vehicle).catch((err) => {
+          getEmail().sendKmLogReminder(vehicle).catch((err) => {
             sentToday.delete(sentKey);
             console.error(`Failed to send KM log reminder:`, err.message);
           });
@@ -326,7 +328,7 @@ async function checkKmLogReminders(db) {
         // Send WhatsApp if channel is 'whatsapp' or 'both'
         if (channel === 'whatsapp' || channel === 'both') {
           const waPhone = settings.whatsappNumber;
-          sendKmLogWhatsApp(vehicle, waPhone).catch((err) => {
+          getWhatsApp().sendKmLogWhatsApp(vehicle, waPhone).catch((err) => {
             console.error(`Failed to send KM log WhatsApp reminder:`, err.message);
           });
         }
