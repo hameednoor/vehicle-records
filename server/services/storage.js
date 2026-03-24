@@ -14,7 +14,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+const UPLOADS_DIR = process.env.VERCEL
+  ? '/tmp/uploads'
+  : path.join(__dirname, '..', 'uploads');
 const isCloudStorage = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY);
 
 /**

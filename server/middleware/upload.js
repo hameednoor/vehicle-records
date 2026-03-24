@@ -4,7 +4,10 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { isCloudStorage, uploadFile } = require('../services/storage');
 
-const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+// On Vercel the deployed filesystem is read-only; use /tmp for temp files.
+const UPLOADS_DIR = process.env.VERCEL
+  ? '/tmp/uploads'
+  : path.join(__dirname, '..', 'uploads');
 
 // Ensure uploads directory exists
 if (!fs.existsSync(UPLOADS_DIR)) {
