@@ -322,12 +322,12 @@ router.get('/export/pdf', async (req, res) => {
     doc.pipe(res);
 
     // ── Helper functions ──
-    function drawTableHeader(cols, headers, y) {
+    function drawTableHeader(cols, headers, y, aligns) {
       doc.rect(40, y, contentWidth, 26).fill('#1B4F72');
-      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(10);
+      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(9);
       let x = 45;
       headers.forEach((header, i) => {
-        const align = i === 0 ? 'left' : 'right';
+        const align = aligns ? aligns[i] : (i === 0 ? 'left' : 'right');
         doc.text(header, x, y + 7, { width: cols[i], align });
         x += cols[i];
       });
@@ -338,7 +338,7 @@ router.get('/export/pdf', async (req, res) => {
       if (striped) {
         doc.rect(40, y, contentWidth, 22).fill('#F0F4F8');
       }
-      doc.fillColor('#2C3E50').font('Helvetica').fontSize(10);
+      doc.fillColor('#2C3E50').font('Helvetica').fontSize(9);
       let x = 45;
       values.forEach((val, i) => {
         const align = aligns ? aligns[i] : (i === 0 ? 'left' : 'right');
@@ -423,8 +423,9 @@ router.get('/export/pdf', async (req, res) => {
     // ══════════════════════════════════════════════════════════
     y = drawSectionTitle('Cost Summary by Vehicle', y);
 
-    const sumCols = [150, 55, 70, 85, 85, 50];
-    y = drawTableHeader(sumCols, ['Vehicle', 'Services', `Avg (${currency})`, `Total (${currency})`, 'Last Service', '%'], y);
+    const sumCols = [145, 55, 70, 85, 85, 55];
+    const sumAligns = ['left', 'right', 'right', 'right', 'right', 'right'];
+    y = drawTableHeader(sumCols, ['Vehicle', 'Services', `Avg (${currency})`, `Total (${currency})`, 'Last Service', '%'], y, sumAligns);
 
     vehicleSummary.forEach((v, index) => {
       y = checkPage(y, 22);
@@ -460,7 +461,8 @@ router.get('/export/pdf', async (req, res) => {
       y = drawSectionTitle('Cost Breakdown by Category', y);
 
       const catCols = [200, 100, 110, 105];
-      y = drawTableHeader(catCols, ['Category', 'Services', `Total (${currency})`, '% of Total'], y);
+      const catAligns = ['left', 'right', 'right', 'right'];
+      y = drawTableHeader(catCols, ['Category', 'Services', `Total (${currency})`, '% of Total'], y, catAligns);
 
       categorySummary.forEach((c, index) => {
         y = checkPage(y, 22);
@@ -492,7 +494,7 @@ router.get('/export/pdf', async (req, res) => {
         grouped[r.vehicle].push(r);
       }
 
-      const detailCols = [72, 110, 65, 80, 90, 98];
+      const detailCols = [68, 95, 60, 72, 95, 105];
       const detailAligns = ['left', 'left', 'right', 'right', 'left', 'left'];
 
       for (const [vehicleName, vehicleRecords] of Object.entries(grouped)) {
@@ -504,7 +506,7 @@ router.get('/export/pdf', async (req, res) => {
         doc.text(`${vehicleName}  (${vehicleRecords.length} records)`, 45, y + 5);
         y += 22;
 
-        y = drawTableHeader(detailCols, ['Date', 'Category', 'KMs', `Cost (${currency})`, 'Provider', 'Notes / Next Due'], y);
+        y = drawTableHeader(detailCols, ['Date', 'Category', 'KMs', `Cost (${currency})`, 'Provider', 'Notes / Next Due'], y, detailAligns);
 
         const maxRecords = Math.min(vehicleRecords.length, 50);
         for (let i = 0; i < maxRecords; i++) {
@@ -519,11 +521,11 @@ router.get('/export/pdf', async (req, res) => {
 
           y = drawTableRow(detailCols, [
             r.date || '-',
-            truncate(r.category, 18),
+            truncate(r.category, 16),
             r.kms ? Number(r.kms).toLocaleString() : '-',
             cost,
-            truncate(r.provider || '-', 14),
-            extra,
+            truncate(r.provider || '-', 16),
+            truncate(extra, 18),
           ], y, i % 2 === 0, detailAligns);
         }
 
