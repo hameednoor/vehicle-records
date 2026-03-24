@@ -117,19 +117,24 @@ export default function Reports() {
     }
   };
 
+  const buildParams = () => {
+    const params = {};
+    if (dateRange === 'custom') {
+      if (customFrom) params.startDate = customFrom;
+      if (customTo) params.endDate = customTo;
+    } else if (dateRange !== 'all') {
+      const { from, to } = getDateRange(dateRange);
+      if (from) params.startDate = format(from, 'yyyy-MM-dd');
+      if (to) params.endDate = format(to, 'yyyy-MM-dd');
+    }
+    if (selectedVehicle !== 'all') params.vehicleId = selectedVehicle;
+    return params;
+  };
+
   const fetchReports = async () => {
     setLoading(true);
     try {
-      let params = {};
-      if (dateRange === 'custom') {
-        if (customFrom) params.from = customFrom;
-        if (customTo) params.to = customTo;
-      } else if (dateRange !== 'all') {
-        const { from, to } = getDateRange(dateRange);
-        if (from) params.from = format(from, 'yyyy-MM-dd');
-        if (to) params.to = format(to, 'yyyy-MM-dd');
-      }
-      if (selectedVehicle !== 'all') params.vehicleId = selectedVehicle;
+      const params = buildParams();
 
       const [byVehicle, byCategory, trends] = await Promise.allSettled([
         getCostByVehicle(params),
@@ -139,15 +144,33 @@ export default function Reports() {
 
       if (byVehicle.status === 'fulfilled') {
         const d = byVehicle.value;
-        setCostByVehicle(Array.isArray(d) ? d : d?.data || d?.costs || []);
+        const list = d?.breakdown || (Array.isArray(d) ? d : d?.data || d?.costs || []);
+        setCostByVehicle(list.map((item) => ({
+          name: item.vehicleName || item.name || 'Unknown',
+          total: Number(item.totalCost || item.total || item.cost || 0),
+          services: Number(item.serviceCount || item.services || 0),
+          average: Number(item.averageCost || item.average || 0),
+          percentage: Number(item.percentage || 0),
+        })));
       }
       if (byCategory.status === 'fulfilled') {
         const d = byCategory.value;
-        setCostByCategory(Array.isArray(d) ? d : d?.data || d?.costs || []);
+        const list = d?.breakdown || (Array.isArray(d) ? d : d?.data || d?.costs || []);
+        setCostByCategory(list.map((item) => ({
+          name: item.categoryName || item.name || 'Unknown',
+          total: Number(item.totalCost || item.total || item.cost || 0),
+          services: Number(item.serviceCount || item.services || 0),
+          percentage: Number(item.percentage || 0),
+        })));
       }
       if (trends.status === 'fulfilled') {
         const d = trends.value;
-        setMonthlyTrends(Array.isArray(d) ? d : d?.data || d?.trends || []);
+        const list = d?.trends || (Array.isArray(d) ? d : d?.data || []);
+        setMonthlyTrends(list.map((item) => ({
+          month: item.month,
+          total: Number(item.totalCost || item.total || item.cost || 0),
+          services: Number(item.serviceCount || item.services || 0),
+        })));
       }
     } catch {
       showError('Failed to load reports');
@@ -159,16 +182,7 @@ export default function Reports() {
   const handleExport = async (type) => {
     const toastId = showLoading(`Generating ${type.toUpperCase()}...`);
     try {
-      let params = {};
-      if (dateRange === 'custom') {
-        if (customFrom) params.from = customFrom;
-        if (customTo) params.to = customTo;
-      } else if (dateRange !== 'all') {
-        const { from, to } = getDateRange(dateRange);
-        if (from) params.from = format(from, 'yyyy-MM-dd');
-        if (to) params.to = format(to, 'yyyy-MM-dd');
-      }
-      if (selectedVehicle !== 'all') params.vehicleId = selectedVehicle;
+      const params = buildParams();
 
       const blob = type === 'csv' ? await exportCsv(params) : await exportPdf(params);
       const url = window.URL.createObjectURL(blob);
@@ -189,16 +203,13 @@ export default function Reports() {
 
   // Summary stats
   const totalSpend = useMemo(
-    () => costByVehicle.reduce((sum, d) => sum + (d.total || d.cost || d.amount || 0), 0),
+    () => costByVehicle.reduce((sum, d) => sum + (d.total || 0), 0),
     [costByVehicle]
   );
   const totalCategories = costByCategory.length;
   const avgMonthly = useMemo(() => {
     if (monthlyTrends.length === 0) return 0;
-    const total = monthlyTrends.reduce(
-      (sum, d) => sum + (d.total || d.cost || d.amount || 0),
-      0
-    );
+    const total = monthlyTrends.reduce((sum, d) => sum + (d.total || 0), 0);
     return Math.round(total / monthlyTrends.length);
   }, [monthlyTrends]);
 
