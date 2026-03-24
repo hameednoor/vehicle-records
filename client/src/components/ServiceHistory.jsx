@@ -428,8 +428,10 @@ export default function ServiceHistory({ vehicleId }) {
                               ))
                             ) : (
                               invoices.map((inv, i) => {
-                                const invUrl =
-                                  inv.thumbnailUrl || inv.url || inv.filePath;
+                                const invId = inv._id || inv.id;
+                                const invUrl = invId
+                                  ? `/api/invoices/${invId}/download`
+                                  : null;
                                 const isImage =
                                   /\.(jpg|jpeg|png|webp)$/i.test(
                                     inv.originalName || ''
@@ -437,7 +439,6 @@ export default function ServiceHistory({ vehicleId }) {
                                   (inv.fileType || '').match(
                                     /\.(jpg|jpeg|png|webp)$/i
                                   );
-                                const invId = inv._id || inv.id;
                                 const isDeleting = deletingInvoiceId === invId;
 
                                 return (

@@ -653,8 +653,9 @@ export default function ServiceForm() {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {existingInvoices.map((inv) => {
                 const invId = inv._id || inv.id;
-                const invUrl =
-                  inv.thumbnailUrl || inv.url || inv.filePath;
+                const invUrl = invId
+                  ? `/api/invoices/${invId}/download`
+                  : null;
                 const isImage =
                   /\.(jpg|jpeg|png|webp)$/i.test(
                     inv.originalName || ''

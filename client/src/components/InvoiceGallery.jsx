@@ -293,16 +293,14 @@ export default function InvoiceGallery({ vehicleId }) {
       {/* Gallery grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
         {displayInvoices.map((invoice, index) => {
-          const url =
-            invoice.url ||
-            invoice.filePath ||
-            invoice.fileUrl ||
-            invoice.thumbnailUrl;
+          const invoiceId = invoice._id || invoice.id;
+          const url = invoiceId
+            ? `/api/invoices/${invoiceId}/download`
+            : null;
           const fileType = invoice.fileType || invoice.type || '';
           const isImage =
             (invoice.mimeType || '').toLowerCase().startsWith('image') ||
             /^\.(jpg|jpeg|png|webp|gif|heic)$/i.test(fileType);
-          const invoiceId = invoice._id || invoice.id;
           const isDeleting = deletingId === invoiceId;
 
           return (
