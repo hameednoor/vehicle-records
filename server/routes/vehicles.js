@@ -27,7 +27,8 @@ router.get('/', async (req, res) => {
          WHERE sr."vehicleId" = v.id AND sr."nextDueDate" IS NOT NULL) as "nextMaintenanceDate",
         (SELECT MIN(sr."nextDueKms") FROM service_records sr
          WHERE sr."vehicleId" = v.id AND sr."nextDueKms" IS NOT NULL) as "nextMaintenanceKms",
-        (SELECT COUNT(*) FROM service_records sr WHERE sr."vehicleId" = v.id) as "totalServices"
+        (SELECT COUNT(*) FROM service_records sr WHERE sr."vehicleId" = v.id) as "totalServices",
+        (SELECT COALESCE(SUM(sr.cost), 0) FROM service_records sr WHERE sr."vehicleId" = v.id) as "totalSpend"
        FROM vehicles v
        ORDER BY v."updatedAt" DESC`
     );
@@ -313,10 +314,17 @@ router.get('/:id/stats', async (req, res) => {
       req.params.id
     );
 
+    const last12Months = await db.get(
+      `SELECT COALESCE(SUM(cost), 0) as total FROM service_records
+       WHERE "vehicleId" = ? AND date >= date('now', '-12 months')`,
+      req.params.id
+    );
+
     res.json({
       vehicleId: req.params.id,
       vehicleName: vehicle.name,
       totalSpend: totalSpend.total,
+      last12Months: last12Months.total,
       serviceCount: serviceCount.count,
       averageCost: Math.round(avgCost.average * 100) / 100,
       costByCategory,

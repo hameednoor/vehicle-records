@@ -1,6 +1,6 @@
 /**
- * Client-side invoice OCR using Tesseract.js in the browser.
- * Replaces server-side OCR to avoid Vercel 30s function timeout.
+ * Client-side invoice OCR using Tesseract.js loaded from CDN.
+ * Uses CDN to avoid Vite bundling issues with the WASM worker.
  */
 
 // Currency patterns for detection
@@ -84,9 +84,6 @@ const TOTAL_KEYWORDS = [
 
 /**
  * Parse a number string that may use different decimal/thousand conventions.
- * "1,234.56" -> 1234.56
- * "1.234,56" -> 1234.56 (European)
- * "1234"     -> 1234
  */
 function parseAmount(str) {
   if (!str) {
@@ -104,19 +101,15 @@ function parseAmount(str) {
 
   if (lastComma > -1 && lastPeriod > -1) {
     if (lastComma > lastPeriod) {
-      // European: "1.234,56" -> comma is decimal
       cleaned = cleaned.replace(/\./g, '').replace(',', '.');
     } else {
-      // US/UK: "1,234.56" -> period is decimal
       cleaned = cleaned.replace(/,/g, '');
     }
   } else if (lastComma > -1) {
     const afterComma = cleaned.substring(lastComma + 1);
     if (afterComma.length === 2 && cleaned.split(',').length === 2) {
-      // Likely decimal: "123,45"
       cleaned = cleaned.replace(',', '.');
     } else {
-      // Likely thousand separator: "1,234" or "1,234,567"
       cleaned = cleaned.replace(/,/g, '');
     }
   }
@@ -136,7 +129,6 @@ export function parseInvoiceText(text) {
   // --- Detect currency ---
   let detectedCurrency = null;
 
-  // Check for 3-letter currency codes first (most reliable)
   const codeMatch = text.match(
     /\b(AED|USD|EUR|GBP|INR|SAR|KWD|BHD|OMR|QAR|PKR|EGP|JPY|CNY|CAD|AUD|CHF|SGD|MYR|PHP)\b/i
   );
@@ -144,10 +136,11 @@ export function parseInvoiceText(text) {
     detectedCurrency = codeMatch[1].toUpperCase();
   }
 
-  // Check for currency symbols if no code found
   if (!detectedCurrency) {
     const symbolEntries = Object.entries(CURRENCY_MAP)
-      .filter(([symbol]) => !(symbol.length <= 3 && /^[A-Z]{3}$/.test(symbol)))
+      .filter(
+        ([symbol]) => !(symbol.length <= 3 && /^[A-Z]{3}$/.test(symbol))
+      )
       .sort((a, b) => b[0].length - a[0].length);
     for (const [symbol, code] of symbolEntries) {
       if (text.includes(symbol)) {
@@ -157,7 +150,6 @@ export function parseInvoiceText(text) {
     }
   }
 
-  // Check for AED-specific patterns (common in UAE invoices)
   if (!detectedCurrency) {
     if (/\b(Dhs?|DHS|AED|dirham)/i.test(text)) {
       detectedCurrency = 'AED';
@@ -175,7 +167,6 @@ export function parseInvoiceText(text) {
     const line = lines[lineIdx];
     const lineLower = line.toLowerCase().trim();
 
-    // Check if this line contains a total keyword
     let bestKeywordPriority = -1;
     for (let ki = 0; ki < TOTAL_KEYWORDS.length; ki++) {
       if (lineLower.includes(TOTAL_KEYWORDS[ki])) {
@@ -184,7 +175,6 @@ export function parseInvoiceText(text) {
       }
     }
 
-    // Extract numbers from this line
     const nums = line.match(numberPattern) || [];
     for (const numStr of nums) {
       const cleaned = numStr.replace(/^[$\u20ac\u00a3\u20b9\u00a5\s]+/, '');
@@ -205,7 +195,6 @@ export function parseInvoiceText(text) {
   // --- Pick the best amount ---
   let bestCost = null;
 
-  // First try: amounts on lines with total keywords
   const keywordAmounts = totalAmounts
     .filter((a) => a.priority > 0)
     .sort((a, b) => {
@@ -219,13 +208,51 @@ export function parseInvoiceText(text) {
     bestCost = keywordAmounts[0].amount;
   }
 
-  // Fallback: largest number in the document
   if (bestCost === null && totalAmounts.length > 0) {
     totalAmounts.sort((a, b) => b.amount - a.amount);
     bestCost = totalAmounts[0].amount;
   }
 
   return { cost: bestCost, currency: detectedCurrency };
+}
+
+// ---------------------------------------------------------------------------
+// Load Tesseract.js from CDN (avoids Vite bundling issues with WASM workers)
+// ---------------------------------------------------------------------------
+let tesseractLoaded = null;
+
+function loadTesseractFromCDN() {
+  if (tesseractLoaded) {
+    return tesseractLoaded;
+  }
+
+  tesseractLoaded = new Promise((resolve, reject) => {
+    // Check if already loaded
+    if (window.Tesseract && window.Tesseract.createWorker) {
+      resolve(window.Tesseract);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src =
+      'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    script.async = true;
+    script.onload = () => {
+      if (window.Tesseract && window.Tesseract.createWorker) {
+        console.log('[OCR] Tesseract.js loaded from CDN');
+        resolve(window.Tesseract);
+      } else {
+        reject(new Error('Tesseract.js loaded but createWorker not found'));
+      }
+    };
+    script.onerror = () => {
+      tesseractLoaded = null;
+      reject(new Error('Failed to load Tesseract.js from CDN'));
+    };
+    document.head.appendChild(script);
+  });
+
+  return tesseractLoaded;
 }
 
 /**
@@ -246,23 +273,12 @@ export async function analyzeInvoiceBrowser(file) {
   console.log('[OCR] Starting analysis for:', file.name, 'size:', file.size);
 
   try {
-    // Dynamic import so tesseract.js is only loaded when needed
-    const Tesseract = await import('tesseract.js');
-    const createWorker = Tesseract.createWorker || Tesseract.default?.createWorker;
+    const Tesseract = await loadTesseractFromCDN();
 
-    if (!createWorker) {
-      console.error('[OCR] createWorker not found in tesseract.js module:', Object.keys(Tesseract));
-      return { cost: null, currency: null, rawText: null };
-    }
+    console.log('[OCR] Creating worker...');
+    const worker = await Tesseract.createWorker('eng');
 
-    console.log('[OCR] Creating tesseract worker...');
-
-    // Let tesseract.js use its built-in CDN paths (do NOT override them)
-    const worker = await createWorker('eng');
-
-    console.log('[OCR] Worker created, recognizing image...');
-
-    // Create object URL from the file for the worker to process
+    console.log('[OCR] Recognizing image...');
     const imageUrl = URL.createObjectURL(file);
 
     let result;
@@ -272,14 +288,14 @@ export async function analyzeInvoiceBrowser(file) {
       URL.revokeObjectURL(imageUrl);
     }
 
-    console.log('[OCR] Recognition complete, terminating worker...');
+    console.log('[OCR] Done, terminating worker...');
     await worker.terminate();
 
     const rawText = result?.data?.text?.trim() || '';
 
-    console.log('[OCR] Extracted text length:', rawText.length);
+    console.log('[OCR] Extracted', rawText.length, 'chars');
     if (rawText.length > 0) {
-      console.log('[OCR] First 200 chars:', rawText.substring(0, 200));
+      console.log('[OCR] Text preview:', rawText.substring(0, 300));
     }
 
     if (!rawText) {
@@ -287,12 +303,11 @@ export async function analyzeInvoiceBrowser(file) {
     }
 
     const { cost, currency } = parseInvoiceText(rawText);
-    console.log('[OCR] Parsed result — cost:', cost, 'currency:', currency);
+    console.log('[OCR] Parsed — cost:', cost, 'currency:', currency);
 
     return { cost, currency, rawText };
   } catch (err) {
-    console.error('[OCR] Browser OCR failed:', err);
-    console.error('[OCR] Error details:', err.message, err.stack);
+    console.error('[OCR] Failed:', err);
     return { cost: null, currency: null, rawText: null };
   }
 }
