@@ -1,4 +1,10 @@
 import axios from 'axios';
+import {
+  getCached as idbGet,
+  setCache as idbSet,
+  deleteCacheByPrefix,
+  clearAllCache,
+} from './cache';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -8,47 +14,59 @@ const api = axios.create({
 });
 
 // ---------------------------------------------------------------------------
-// Simple in-memory cache for GET requests (stale-while-revalidate pattern)
-// Shows cached data instantly while refreshing in the background.
+// Dual-layer cache: in-memory Map (fast, same session) + IndexedDB (persistent
+// across refreshes/restarts). Stale-while-revalidate pattern.
 // ---------------------------------------------------------------------------
-const cache = new Map();
-const CACHE_TTL = 120_000; // 2 minutes — max age before cache is discarded
-const CACHE_FRESH = 30_000; // 30 seconds — don't background-refresh within this window
+const memCache = new Map();
+const CACHE_TTL = 86_400_000; // 24 hours — max age before cached data is discarded
+const CACHE_FRESH = 30_000; // 30 seconds — background-refresh after this window
 
-function getCached(key) {
-  const entry = cache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.time > CACHE_TTL) {
-    cache.delete(key);
-    return null;
-  }
-  return entry;
-}
-
-function setCache(key, data) {
-  cache.set(key, { data, time: Date.now() });
+function updateBothCaches(key, data) {
+  memCache.set(key, { data, time: Date.now() });
+  idbSet(key, data).catch(() => {});
 }
 
 export function invalidateCache(prefix) {
-  for (const key of cache.keys()) {
-    if (key.startsWith(prefix)) cache.delete(key);
+  for (const key of memCache.keys()) {
+    if (key.startsWith(prefix)) memCache.delete(key);
   }
+  deleteCacheByPrefix(prefix).catch(() => {});
 }
 
 function cachedGet(url, params) {
   const key = url + (params ? JSON.stringify(params) : '');
-  const entry = getCached(key);
-  if (entry) {
-    // Only background-refresh if cache is stale (older than CACHE_FRESH)
-    if (Date.now() - entry.time > CACHE_FRESH) {
-      api.get(url, { params }).then((r) => setCache(key, r.data)).catch(() => {});
+
+  // Fast path: check in-memory cache (synchronous, sub-millisecond)
+  const memEntry = memCache.get(key);
+  if (memEntry && Date.now() - memEntry.time <= CACHE_TTL) {
+    if (Date.now() - memEntry.time > CACHE_FRESH) {
+      api.get(url, { params }).then((r) => updateBothCaches(key, r.data)).catch(() => {});
     }
-    return Promise.resolve(entry.data);
+    return Promise.resolve(memEntry.data);
   }
-  return api.get(url, { params }).then((r) => {
-    setCache(key, r.data);
-    return r.data;
-  });
+
+  // Slow path: check IndexedDB (async, ~1-3ms)
+  return idbGet(key)
+    .then((entry) => {
+      if (entry && Date.now() - entry.time <= CACHE_TTL) {
+        memCache.set(key, entry);
+        if (Date.now() - entry.time > CACHE_FRESH) {
+          api.get(url, { params }).then((r) => updateBothCaches(key, r.data)).catch(() => {});
+        }
+        return entry.data;
+      }
+      return api.get(url, { params }).then((r) => {
+        updateBothCaches(key, r.data);
+        return r.data;
+      });
+    })
+    .catch(() => {
+      // IndexedDB unavailable — fall back to network
+      return api.get(url, { params }).then((r) => {
+        updateBothCaches(key, r.data);
+        return r.data;
+      });
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -78,7 +96,8 @@ export function storeAuth(token, user) {
 export function clearAuth() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
-  cache.clear();
+  memCache.clear();
+  clearAllCache().catch(() => {});
 }
 
 // Callback for 401 responses — set by AuthContext
