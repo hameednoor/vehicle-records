@@ -1,6 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Save, X, Plus, Loader2, ScanLine } from 'lucide-react';
+import {
+  ArrowLeft,
+  Save,
+  X,
+  Plus,
+  Loader2,
+  ScanLine,
+  FileText,
+  Trash2,
+} from 'lucide-react';
 import {
   getVehicles,
   getVehicle,
@@ -10,8 +19,9 @@ import {
   updateServiceRecord,
   uploadInvoices,
   getExchangeRate,
+  getServiceRecord,
+  deleteInvoice,
 } from '../api';
-import { analyzeInvoiceBrowser } from '../services/ocr';
 import DropZone from './ui/DropZone';
 import { showSuccess, showError } from './ui/Toast';
 import { format } from 'date-fns';
@@ -31,15 +41,21 @@ export default function ServiceForm() {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [invoiceFiles, setInvoiceFiles] = useState([]);
 
+  // Existing invoices (when editing)
+  const [existingInvoices, setExistingInvoices] = useState([]);
+  const [deletingInvoiceId, setDeletingInvoiceId] = useState(null);
+
   const [currency, setCurrency] = useState(
     editRecord?.originalCurrency || editRecord?.currency || 'AED'
   );
-  const [exchangeRate, setExchangeRate] = useState(editRecord?.exchangeRate || 1);
+  const [exchangeRate, setExchangeRate] = useState(
+    editRecord?.exchangeRate || 1
+  );
   const [convertedCost, setConvertedCost] = useState('');
   const [loadingRate, setLoadingRate] = useState(false);
   const [analyzingInvoice, setAnalyzingInvoice] = useState(false);
   const [invoiceDetected, setInvoiceDetected] = useState(null);
-  const analysisCostRef = useRef(0); // tracks cumulative OCR-detected cost across all files
+  const analysisCostRef = useRef(0);
 
   const currencies = [
     { code: 'AED', name: 'AED - UAE Dirham' },
@@ -65,12 +81,17 @@ export default function ServiceForm() {
   ];
 
   const [form, setForm] = useState({
-    vehicleId: vehicleId || editRecord?.vehicleId || editRecord?.vehicle_id || '',
+    vehicleId:
+      vehicleId || editRecord?.vehicleId || editRecord?.vehicle_id || '',
     categoryId: editRecord?.categoryId || editRecord?.category_id || '',
     date: editRecord?.date
       ? editRecord.date.substring(0, 10)
       : format(new Date(), 'yyyy-MM-dd'),
-    kms: editRecord?.kmsAtService || editRecord?.kms_at_service || editRecord?.kms || '',
+    kms:
+      editRecord?.kmsAtService ||
+      editRecord?.kms_at_service ||
+      editRecord?.kms ||
+      '',
     cost: editRecord?.originalCost || editRecord?.cost || '',
     provider: editRecord?.provider || '',
     notes: editRecord?.notes || '',
@@ -84,23 +105,35 @@ export default function ServiceForm() {
 
   const fetchInitialData = async () => {
     try {
-      const [vehiclesRes, categoriesRes] = await Promise.allSettled([
-        getVehicles(),
-        getCategories(),
-      ]);
+      const fetches = [getVehicles(), getCategories()];
 
-      if (vehiclesRes.status === 'fulfilled') {
-        const vList = Array.isArray(vehiclesRes.value)
-          ? vehiclesRes.value
-          : vehiclesRes.value?.vehicles || vehiclesRes.value?.data || [];
+      // If editing, also fetch the full record (which includes invoices)
+      if (isEditing) {
+        const editId = editRecord._id || editRecord.id;
+        fetches.push(getServiceRecord(editId));
+      }
+
+      const results = await Promise.allSettled(fetches);
+
+      if (results[0].status === 'fulfilled') {
+        const vList = Array.isArray(results[0].value)
+          ? results[0].value
+          : results[0].value?.vehicles || results[0].value?.data || [];
         setVehicles(vList);
       }
 
-      if (categoriesRes.status === 'fulfilled') {
-        const cList = Array.isArray(categoriesRes.value)
-          ? categoriesRes.value
-          : categoriesRes.value?.categories || categoriesRes.value?.data || [];
+      if (results[1].status === 'fulfilled') {
+        const cList = Array.isArray(results[1].value)
+          ? results[1].value
+          : results[1].value?.categories || results[1].value?.data || [];
         setCategories(cList.filter((c) => !c.archived && !c.is_archived));
+      }
+
+      // Load existing invoices from the full record
+      if (isEditing && results[2]?.status === 'fulfilled') {
+        const fullRecord = results[2].value;
+        const invList = fullRecord?.invoices || [];
+        setExistingInvoices(invList);
       }
 
       // If creating (not editing) and we have a vehicle ID, load its current KMs
@@ -143,16 +176,17 @@ export default function ServiceForm() {
       .finally(() => setLoadingRate(false));
   }, [currency, form.cost, form.date]);
 
-  // Auto-populate next due from category defaults when category changes (only for new records)
   const handleCategoryChange = (categoryId) => {
     handleChange('categoryId', categoryId);
     if (!isEditing && categoryId) {
       const cat = categories.find((c) => (c._id || c.id) === categoryId);
       if (cat) {
         if (cat.defaultKms && !form.nextDueKms) {
-          // Convert interval to absolute: currentKms + interval
           const currentKms = Number(form.kms) || 0;
-          handleChange('nextDueKms', String(currentKms + Number(cat.defaultKms)));
+          handleChange(
+            'nextDueKms',
+            String(currentKms + Number(cat.defaultKms))
+          );
         }
         if (cat.defaultDays && !form.nextDueDays) {
           handleChange('nextDueDays', String(cat.defaultDays));
@@ -180,6 +214,105 @@ export default function ServiceForm() {
       showSuccess('Category created');
     } catch (err) {
       showError(err.message);
+    }
+  };
+
+  const handleDeleteExistingInvoice = async (inv) => {
+    const invId = inv._id || inv.id;
+    if (deletingInvoiceId === invId) return;
+    if (!window.confirm('Delete this invoice?')) return;
+
+    setDeletingInvoiceId(invId);
+    try {
+      await deleteInvoice(invId);
+      setExistingInvoices((prev) =>
+        prev.filter((i) => (i._id || i.id) !== invId)
+      );
+      showSuccess('Invoice deleted');
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setDeletingInvoiceId(null);
+    }
+  };
+
+  // OCR analysis for uploaded image files
+  const runOcrOnFiles = async (files) => {
+    const imageFiles = files.filter(
+      (f) =>
+        f.type?.startsWith('image/') ||
+        /\.(jpg|jpeg|png|webp|heic|bmp|gif)$/i.test(f.name)
+    );
+    if (imageFiles.length === 0) return;
+
+    setAnalyzingInvoice(true);
+    setInvoiceDetected(null);
+
+    try {
+      // Dynamic import so tesseract.js is only loaded when needed
+      const { analyzeInvoiceBrowser } = await import('../services/ocr');
+
+      const results = await Promise.all(
+        imageFiles.map((file) =>
+          analyzeInvoiceBrowser(file).catch((err) => {
+            console.error('[OCR] Failed for', file.name, err);
+            return null;
+          })
+        )
+      );
+
+      console.log('[OCR] Results:', results);
+
+      let batchCost = 0;
+      let detectedCurrency = null;
+      let anyResult = false;
+
+      for (const result of results) {
+        if (!result) continue;
+        anyResult = true;
+        if (result.cost) batchCost += result.cost;
+        if (result.currency && !detectedCurrency) {
+          const validCode = currencies.find(
+            (c) => c.code === result.currency
+          );
+          if (validCode) detectedCurrency = result.currency;
+        }
+      }
+
+      if (batchCost > 0 || detectedCurrency) {
+        const newTotal = analysisCostRef.current + batchCost;
+        analysisCostRef.current = newTotal;
+
+        setInvoiceDetected({
+          cost: newTotal,
+          currency: detectedCurrency,
+        });
+
+        if (newTotal > 0) {
+          handleChange('cost', String(newTotal));
+        }
+        if (detectedCurrency) {
+          setCurrency(detectedCurrency);
+        }
+
+        const parts = [];
+        if (detectedCurrency) parts.push(detectedCurrency);
+        if (newTotal) parts.push(newTotal.toLocaleString());
+        if (parts.length > 0) {
+          showSuccess(
+            `Detected from invoice${imageFiles.length > 1 ? 's' : ''}: ${parts.join(' ')}`
+          );
+        }
+      } else if (!anyResult) {
+        showError('Could not read invoice text. Try a clearer photo.');
+      } else {
+        showSuccess('Invoice scanned but no cost found. Enter cost manually.');
+      }
+    } catch (err) {
+      console.error('[OCR] Import or analysis failed:', err);
+      showError('Invoice scanning failed. Enter cost manually.');
+    } finally {
+      setAnalyzingInvoice(false);
     }
   };
 
@@ -213,7 +346,12 @@ export default function ServiceForm() {
         categoryId: form.categoryId,
         date: form.date,
         kmsAtService: form.kms ? Number(form.kms) : null,
-        cost: currency !== 'AED' && convertedCost ? Number(convertedCost) : (form.cost ? Number(form.cost) : 0),
+        cost:
+          currency !== 'AED' && convertedCost
+            ? Number(convertedCost)
+            : form.cost
+            ? Number(form.cost)
+            : 0,
         originalCost: form.cost ? Number(form.cost) : null,
         originalCurrency: currency,
         exchangeRate: exchangeRate,
@@ -235,7 +373,7 @@ export default function ServiceForm() {
         showSuccess('Service record created!');
       }
 
-      // Upload invoices separately if any
+      // Upload new invoices if any
       if (invoiceFiles.length > 0 && recordId) {
         const invoiceFormData = new FormData();
         invoiceFiles.forEach((file) => {
@@ -260,7 +398,9 @@ export default function ServiceForm() {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h1 className="page-title">{isEditing ? 'Edit Service' : 'Log Service'}</h1>
+            <h1 className="page-title">
+              {isEditing ? 'Edit Service' : 'Log Service'}
+            </h1>
             <p className="page-subtitle">Loading form data...</p>
           </div>
         </div>
@@ -284,9 +424,13 @@ export default function ServiceForm() {
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div>
-          <h1 className="page-title">{isEditing ? 'Edit Service' : 'Log Service'}</h1>
+          <h1 className="page-title">
+            {isEditing ? 'Edit Service' : 'Log Service'}
+          </h1>
           <p className="page-subtitle">
-            {isEditing ? 'Update this maintenance entry' : 'Record a maintenance or service entry'}
+            {isEditing
+              ? 'Update this maintenance entry'
+              : 'Record a maintenance or service entry'}
           </p>
         </div>
       </div>
@@ -294,7 +438,9 @@ export default function ServiceForm() {
       <form onSubmit={handleSubmit} className="card p-6 space-y-6">
         {/* Vehicle selector */}
         <div>
-          <label className="label" htmlFor="vehicle">Vehicle *</label>
+          <label className="label" htmlFor="vehicle">
+            Vehicle *
+          </label>
           <select
             id="vehicle"
             className="select"
@@ -314,7 +460,9 @@ export default function ServiceForm() {
         {/* Category */}
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className="label mb-0" htmlFor="category">Category</label>
+            <label className="label mb-0" htmlFor="category">
+              Category
+            </label>
             <button
               type="button"
               onClick={() => setShowNewCategory(!showNewCategory)}
@@ -333,14 +481,24 @@ export default function ServiceForm() {
                 value={newCategoryName}
                 onChange={(e) => setNewCategoryName(e.target.value)}
                 placeholder="Category name"
-                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCategory())}
+                onKeyDown={(e) =>
+                  e.key === 'Enter' &&
+                  (e.preventDefault(), handleAddCategory())
+                }
               />
-              <button type="button" onClick={handleAddCategory} className="btn-primary text-sm">
+              <button
+                type="button"
+                onClick={handleAddCategory}
+                className="btn-primary text-sm"
+              >
                 Add
               </button>
               <button
                 type="button"
-                onClick={() => { setShowNewCategory(false); setNewCategoryName(''); }}
+                onClick={() => {
+                  setShowNewCategory(false);
+                  setNewCategoryName('');
+                }}
                 className="btn-ghost text-sm"
               >
                 <X className="w-4 h-4" />
@@ -360,7 +518,13 @@ export default function ServiceForm() {
               <option key={c._id || c.id} value={c._id || c.id}>
                 {c.name}
                 {c.defaultKms || c.defaultDays
-                  ? ` (${c.defaultKms ? c.defaultKms.toLocaleString() + ' km' : ''}${c.defaultKms && c.defaultDays ? ' / ' : ''}${c.defaultDays ? c.defaultDays + ' days' : ''})`
+                  ? ` (${
+                      c.defaultKms
+                        ? c.defaultKms.toLocaleString() + ' km'
+                        : ''
+                    }${c.defaultKms && c.defaultDays ? ' / ' : ''}${
+                      c.defaultDays ? c.defaultDays + ' days' : ''
+                    })`
                   : ''}
               </option>
             ))}
@@ -370,7 +534,9 @@ export default function ServiceForm() {
         {/* Date and KMs */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="label" htmlFor="date">Service Date</label>
+            <label className="label" htmlFor="date">
+              Service Date
+            </label>
             <input
               id="date"
               type="date"
@@ -380,7 +546,9 @@ export default function ServiceForm() {
             />
           </div>
           <div>
-            <label className="label" htmlFor="kms">Kilometers at Service</label>
+            <label className="label" htmlFor="kms">
+              Kilometers at Service
+            </label>
             <input
               id="kms"
               type="number"
@@ -396,7 +564,9 @@ export default function ServiceForm() {
         {/* Cost and Currency */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="label" htmlFor="cost">Cost</label>
+            <label className="label" htmlFor="cost">
+              Cost
+            </label>
             <div className="flex gap-2">
               <select
                 value={currency}
@@ -404,7 +574,9 @@ export default function ServiceForm() {
                 className="select w-28 flex-shrink-0"
               >
                 {currencies.map((c) => (
-                  <option key={c.code} value={c.code}>{c.code}</option>
+                  <option key={c.code} value={c.code}>
+                    {c.code}
+                  </option>
                 ))}
               </select>
               <input
@@ -420,14 +592,23 @@ export default function ServiceForm() {
             </div>
             {currency !== 'AED' && form.cost && (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                {loadingRate ? 'Fetching rate...' : (
-                  <>{'\u2248'} AED {convertedCost} <span className="text-gray-400">(1 {currency} = {exchangeRate} AED)</span></>
+                {loadingRate ? (
+                  'Fetching rate...'
+                ) : (
+                  <>
+                    {'\u2248'} AED {convertedCost}{' '}
+                    <span className="text-gray-400">
+                      (1 {currency} = {exchangeRate} AED)
+                    </span>
+                  </>
                 )}
               </p>
             )}
           </div>
           <div>
-            <label className="label" htmlFor="provider">Service Provider</label>
+            <label className="label" htmlFor="provider">
+              Service Provider
+            </label>
             <input
               id="provider"
               type="text"
@@ -441,7 +622,9 @@ export default function ServiceForm() {
 
         {/* Notes */}
         <div>
-          <label className="label" htmlFor="notes">Notes</label>
+          <label className="label" htmlFor="notes">
+            Notes
+          </label>
           <textarea
             id="notes"
             className="input min-h-[80px] resize-y"
@@ -452,84 +635,81 @@ export default function ServiceForm() {
           />
         </div>
 
-        {/* Invoice upload */}
+        {/* Existing invoices (when editing) */}
+        {isEditing && existingInvoices.length > 0 && (
+          <div>
+            <label className="label">
+              Existing Invoices ({existingInvoices.length})
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {existingInvoices.map((inv) => {
+                const invId = inv._id || inv.id;
+                const invUrl =
+                  inv.thumbnailUrl || inv.url || inv.filePath;
+                const isImage =
+                  /\.(jpg|jpeg|png|webp)$/i.test(
+                    inv.originalName || ''
+                  ) ||
+                  (inv.fileType || '').match(/\.(jpg|jpeg|png|webp)$/i);
+                const isDeleting = deletingInvoiceId === invId;
+
+                return (
+                  <div
+                    key={invId}
+                    className="relative card overflow-hidden"
+                  >
+                    <div className="aspect-square flex items-center justify-center bg-gray-50 dark:bg-gray-800">
+                      {invUrl && isImage ? (
+                        <img
+                          src={invUrl}
+                          alt={inv.originalName || 'Invoice'}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <FileText className="w-10 h-10 text-gray-400" />
+                      )}
+                    </div>
+                    <div className="px-2 py-1.5">
+                      <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
+                        {inv.originalName || 'Invoice'}
+                      </p>
+                    </div>
+                    {/* Delete button */}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteExistingInvoice(inv)}
+                      disabled={isDeleting}
+                      className="absolute top-1 right-1 w-6 h-6 rounded-full
+                                 bg-red-500 text-white flex items-center justify-center
+                                 hover:bg-red-600 active:bg-red-700
+                                 shadow-md z-10 border-2 border-white dark:border-gray-900"
+                      title="Delete invoice"
+                    >
+                      {isDeleting ? (
+                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Trash2 className="w-3 h-3" />
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Upload new invoices */}
         <div>
-          <label className="label">Invoices / Receipts</label>
+          <label className="label">
+            {isEditing ? 'Add More Invoices' : 'Invoices / Receipts'}
+          </label>
           <DropZone
             onFilesSelected={(files) => {
               setInvoiceFiles((prev) => [...prev, ...files]);
-              const imageFiles = files.filter((f) =>
-                f.type?.startsWith('image/') ||
-                /\.(jpg|jpeg|png|webp|heic)$/i.test(f.name)
-              );
-              if (imageFiles.length === 0) return;
-
-              setAnalyzingInvoice(true);
-              setInvoiceDetected(null);
-
-              const analyzeAll = imageFiles.map((file) =>
-                analyzeInvoiceBrowser(file).catch((err) => {
-                  console.error('[OCR] Analysis failed for', file.name, err);
-                  return null;
-                })
-              );
-
-              Promise.all(analyzeAll)
-                .then((results) => {
-                  console.log('[OCR] All results:', results);
-
-                  let batchCost = 0;
-                  let detectedCurrency = null;
-                  let anyResult = false;
-
-                  for (const result of results) {
-                    if (!result) continue;
-                    anyResult = true;
-                    if (result.cost) batchCost += result.cost;
-                    if (result.currency && !detectedCurrency) {
-                      const validCode = currencies.find(
-                        (c) => c.code === result.currency
-                      );
-                      if (validCode) detectedCurrency = result.currency;
-                    }
-                  }
-
-                  if (batchCost > 0 || detectedCurrency) {
-                    // Sum with any previously detected costs
-                    const newTotal = analysisCostRef.current + batchCost;
-                    analysisCostRef.current = newTotal;
-
-                    setInvoiceDetected({
-                      cost: newTotal,
-                      currency: detectedCurrency,
-                    });
-
-                    if (newTotal > 0) {
-                      handleChange('cost', String(newTotal));
-                    }
-                    if (detectedCurrency) {
-                      setCurrency(detectedCurrency);
-                    }
-
-                    const parts = [];
-                    if (detectedCurrency) parts.push(detectedCurrency);
-                    if (newTotal) parts.push(newTotal.toLocaleString());
-                    if (parts.length > 0) {
-                      showSuccess(
-                        `Detected from invoice${imageFiles.length > 1 ? 's' : ''}: ${parts.join(' ')}`
-                      );
-                    }
-                  } else if (!anyResult) {
-                    showError('Could not read invoice text. Try a clearer photo.');
-                  } else {
-                    showSuccess('Invoice scanned but no cost found. Enter cost manually.');
-                  }
-                })
-                .catch((err) => {
-                  console.error('[OCR] Promise.all failed:', err);
-                  showError('Invoice scanning failed. Enter cost manually.');
-                })
-                .finally(() => setAnalyzingInvoice(false));
+              runOcrOnFiles(files);
             }}
             files={invoiceFiles}
             onRemove={(index) => {
@@ -555,8 +735,8 @@ export default function ServiceForm() {
           {invoiceDetected && !analyzingInvoice && (
             <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2">
               Auto-detected: {invoiceDetected.currency || 'Unknown currency'}{' '}
-              {invoiceDetected.cost?.toLocaleString() || '—'}
-              {' '}<span className="text-gray-400">(edit above if needed)</span>
+              {invoiceDetected.cost?.toLocaleString() || '\u2014'}{' '}
+              <span className="text-gray-400">(edit above if needed)</span>
             </p>
           )}
         </div>
@@ -615,9 +795,21 @@ export default function ServiceForm() {
             <X className="w-4 h-4" />
             Cancel
           </button>
-          <button type="submit" className="btn-primary" disabled={saving || analyzingInvoice || loadingRate}>
+          <button
+            type="submit"
+            className="btn-primary"
+            disabled={saving || analyzingInvoice || loadingRate}
+          >
             <Save className="w-4 h-4" />
-            {saving ? 'Saving...' : analyzingInvoice ? 'Analyzing...' : loadingRate ? 'Loading rate...' : isEditing ? 'Update Record' : 'Save Service Record'}
+            {saving
+              ? 'Saving...'
+              : analyzingInvoice
+              ? 'Analyzing...'
+              : loadingRate
+              ? 'Loading rate...'
+              : isEditing
+              ? 'Update Record'
+              : 'Save Service Record'}
           </button>
         </div>
       </form>

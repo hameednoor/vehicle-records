@@ -198,9 +198,10 @@ export default function DropZone({
                       e.stopPropagation();
                       onRemove(index);
                     }}
-                    className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full
-                               opacity-0 group-hover:opacity-100 transition-opacity shadow-md
-                               hover:bg-red-600"
+                    className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full
+                               flex items-center justify-center shadow-md
+                               hover:bg-red-600 active:bg-red-700
+                               border-2 border-white dark:border-gray-900"
                   >
                     <X className="w-3 h-3" />
                   </button>
