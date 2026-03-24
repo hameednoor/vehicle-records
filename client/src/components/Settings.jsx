@@ -75,7 +75,7 @@ export default function Settings() {
         ...prev,
         currency: s.currency || prev.currency,
         timezone: s.timezone || prev.timezone,
-        notificationEmails: Array.isArray(s.notificationEmails) ? s.notificationEmails : Array.isArray(s.notification_emails) ? s.notification_emails : prev.notificationEmails,
+        notificationEmails: Array.isArray(s.emails) ? s.emails : Array.isArray(s.notificationEmails) ? s.notificationEmails : Array.isArray(s.notification_emails) ? s.notification_emails : prev.notificationEmails,
         whatsappNumber: s.whatsappNumber ?? s.whatsapp_number ?? prev.whatsappNumber,
         reminderBufferKms: s.reminderBufferKms ?? s.reminder_buffer_kms ?? prev.reminderBufferKms,
         reminderBufferDays: s.reminderBufferDays ?? s.reminder_buffer_days ?? prev.reminderBufferDays,
@@ -112,7 +112,10 @@ export default function Settings() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateSettings(settings);
+      await updateSettings({
+        ...settings,
+        emails: settings.notificationEmails,
+      });
       showSuccess('Settings saved');
     } catch (err) {
       showError(err.message);

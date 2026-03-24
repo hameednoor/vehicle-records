@@ -48,6 +48,12 @@ async function runReminderChecks(db) {
   console.log(`[${timestamp}] Running reminder checks...`);
 
   try {
+    await checkDefaultReminders(db);
+  } catch (error) {
+    console.error('Error checking default reminders:', error.message);
+  }
+
+  try {
     await checkMaintenanceReminders(db);
   } catch (error) {
     console.error('Error checking maintenance reminders:', error.message);
@@ -57,6 +63,98 @@ async function runReminderChecks(db) {
     await checkKmLogReminders(db);
   } catch (error) {
     console.error('Error checking KM log reminders:', error.message);
+  }
+}
+
+/**
+ * Automatically send reminders for ALL upcoming/overdue services
+ * to the default email(s) and WhatsApp number from Settings.
+ * No per-vehicle reminder config needed.
+ */
+async function checkDefaultReminders(db) {
+  const settings = await db.get('SELECT * FROM settings WHERE id = 1');
+  if (!settings) return;
+
+  // Parse default recipients from settings
+  let defaultEmails = [];
+  try {
+    defaultEmails = JSON.parse(settings.emails || '[]');
+  } catch {
+    defaultEmails = [];
+  }
+  const defaultWhatsApp = settings.whatsappNumber || '';
+
+  // If no default contacts configured, nothing to send
+  if (defaultEmails.length === 0 && !defaultWhatsApp) return;
+
+  const bufferKms = settings.reminderBufferKms || 500;
+  const bufferDays = settings.reminderBufferDays || 7;
+
+  const today = new Date().toISOString().split('T')[0];
+  const bufferDate = new Date();
+  bufferDate.setDate(bufferDate.getDate() + bufferDays);
+  const bufferDateStr = bufferDate.toISOString().split('T')[0];
+
+  // Date-based upcoming/overdue
+  const dateRecords = await db.all(
+    `SELECT sr.*, c.name as "categoryName", v.name as "vehicleName", v."currentKms"
+     FROM service_records sr
+     JOIN categories c ON sr."categoryId" = c.id
+     JOIN vehicles v ON sr."vehicleId" = v.id
+     WHERE sr."nextDueDate" IS NOT NULL AND sr."nextDueDate" <= ?
+     ORDER BY sr."nextDueDate" ASC`,
+    bufferDateStr
+  );
+
+  // KM-based upcoming/overdue
+  const kmsRecords = await db.all(
+    `SELECT sr.*, c.name as "categoryName", v.name as "vehicleName", v."currentKms"
+     FROM service_records sr
+     JOIN categories c ON sr."categoryId" = c.id
+     JOIN vehicles v ON sr."vehicleId" = v.id
+     WHERE sr."nextDueKms" IS NOT NULL AND sr."nextDueKms" <= (v."currentKms" + ?)`,
+    bufferKms
+  );
+
+  // Deduplicate
+  const seen = new Map();
+  for (const record of [...dateRecords, ...kmsRecords]) {
+    if (!seen.has(record.id)) {
+      seen.set(record.id, record);
+    }
+  }
+
+  for (const [, record] of seen) {
+    const sentKey = `default-${record.id}-${today}`;
+    if (sentToday.has(sentKey)) continue;
+
+    const dateOverdue = record.nextDueDate && record.nextDueDate < today;
+    const kmOverdue = record.nextDueKms && Number(record.nextDueKms) <= Number(record.currentKms || 0);
+    record._isOverdue = dateOverdue || kmOverdue;
+
+    const vehicle = {
+      name: record.vehicleName,
+      currentKms: record.currentKms,
+      _recipients: defaultEmails,
+    };
+    const category = { name: record.categoryName };
+
+    sentToday.add(sentKey);
+
+    // Send email if default emails exist
+    if (defaultEmails.length > 0) {
+      sendMaintenanceReminder(vehicle, record, category).catch((err) => {
+        sentToday.delete(sentKey);
+        console.error(`Failed to send default maintenance email:`, err.message);
+      });
+    }
+
+    // Send WhatsApp if default number exists
+    if (defaultWhatsApp) {
+      sendMaintenanceWhatsApp(vehicle, record, category, defaultWhatsApp).catch((err) => {
+        console.error(`Failed to send default maintenance WhatsApp:`, err.message);
+      });
+    }
   }
 }
 
