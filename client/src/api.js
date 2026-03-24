@@ -12,7 +12,7 @@ const api = axios.create({
 // Shows cached data instantly while refreshing in the background.
 // ---------------------------------------------------------------------------
 const cache = new Map();
-const CACHE_TTL = 30_000; // 30 seconds
+const CACHE_TTL = 120_000; // 2 minutes — longer cache avoids refetches on back/forward nav
 
 function getCached(key) {
   const entry = cache.get(key);

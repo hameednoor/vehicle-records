@@ -10,8 +10,8 @@ import {
   updateServiceRecord,
   uploadInvoices,
   getExchangeRate,
-  analyzeInvoice,
 } from '../api';
+import { analyzeInvoiceBrowser } from '../services/ocr';
 import DropZone from './ui/DropZone';
 import { showSuccess, showError } from './ui/Toast';
 import { format } from 'date-fns';
@@ -468,7 +468,7 @@ export default function ServiceForm() {
               setInvoiceDetected(null);
 
               const analyzeAll = imageFiles.map((file) =>
-                analyzeInvoice(file).catch(() => null)
+                analyzeInvoiceBrowser(file).catch(() => null)
               );
 
               Promise.all(analyzeAll)

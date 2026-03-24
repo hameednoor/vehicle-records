@@ -14,12 +14,14 @@ import {
   Filter,
   ArrowUpDown,
   ClipboardList,
+  X,
 } from 'lucide-react';
 import {
   getVehicleServiceRecords,
   getCategories,
   deleteServiceRecord,
   getServiceInvoices,
+  deleteInvoice,
 } from '../api';
 import InvoiceViewer from './InvoiceViewer';
 import Modal from './ui/Modal';
@@ -155,6 +157,25 @@ export default function ServiceHistory({ vehicleId }) {
       setViewerIndex(null);
     } else if (viewerIndex >= updated.length) {
       setViewerIndex(updated.length - 1);
+    }
+  };
+
+  const [deletingInvoiceId, setDeletingInvoiceId] = useState(null);
+
+  const handleDeleteInvoice = async (e, inv) => {
+    e.stopPropagation();
+    const invId = inv._id || inv.id;
+    if (deletingInvoiceId === invId) return; // already deleting
+    if (!window.confirm('Delete this invoice?')) return;
+    setDeletingInvoiceId(invId);
+    try {
+      await deleteInvoice(invId);
+      showSuccess('Invoice deleted');
+      handleInvoiceDeleted(invId);
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      setDeletingInvoiceId(null);
     }
   };
 
@@ -350,32 +371,47 @@ export default function ServiceHistory({ vehicleId }) {
                                 const invUrl = inv.thumbnailUrl || inv.url || inv.filePath;
                                 const isImage = /\.(jpg|jpeg|png|webp)$/i.test(inv.originalName || '') ||
                                                 (inv.fileType || '').match(/\.(jpg|jpeg|png|webp)$/i);
+                                const invId = inv._id || inv.id;
                                 return (
-                                  <button
-                                    key={inv._id || inv.id || i}
-                                    type="button"
-                                    onClick={() => openInvoiceViewer(invoices, i)}
-                                    className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100
-                                             dark:bg-gray-800 flex-shrink-0 border border-gray-200
-                                             dark:border-gray-700 hover:border-brand-400
-                                             hover:ring-2 hover:ring-brand-400/50
-                                             transition-all cursor-pointer"
-                                  >
-                                    {invUrl && isImage ? (
-                                      <img
-                                        src={invUrl}
-                                        alt="Invoice"
-                                        className="w-full h-full object-cover"
-                                        onError={(e) => {
-                                          e.target.style.display = 'none';
-                                        }}
-                                      />
-                                    ) : (
-                                      <div className="w-full h-full flex items-center justify-center">
-                                        <FileText className="w-6 h-6 text-gray-400" />
-                                      </div>
-                                    )}
-                                  </button>
+                                  <div key={invId || i} className="relative flex-shrink-0 group">
+                                    <button
+                                      type="button"
+                                      onClick={() => openInvoiceViewer(invoices, i)}
+                                      className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100
+                                               dark:bg-gray-800 border border-gray-200
+                                               dark:border-gray-700 hover:border-brand-400
+                                               hover:ring-2 hover:ring-brand-400/50
+                                               transition-all cursor-pointer"
+                                    >
+                                      {invUrl && isImage ? (
+                                        <img
+                                          src={invUrl}
+                                          alt="Invoice"
+                                          className="w-full h-full object-cover"
+                                          onError={(e) => {
+                                            e.target.style.display = 'none';
+                                          }}
+                                        />
+                                      ) : (
+                                        <div className="w-full h-full flex items-center justify-center">
+                                          <FileText className="w-6 h-6 text-gray-400" />
+                                        </div>
+                                      )}
+                                    </button>
+                                    {/* Delete button overlay */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleDeleteInvoice(e, inv)}
+                                      disabled={deletingInvoiceId === invId}
+                                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full
+                                               bg-red-500 text-white flex items-center justify-center
+                                               opacity-0 group-hover:opacity-100 transition-opacity
+                                               hover:bg-red-600 shadow-sm z-10"
+                                      title="Delete invoice"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
                                 );
                               })
                             )}

@@ -13,6 +13,17 @@ const Categories = lazy(() => import('./components/Categories'));
 const Reports = lazy(() => import('./components/Reports'));
 const Settings = lazy(() => import('./components/Settings'));
 
+// Prefetch the most-visited routes after initial render so navigation feels instant
+if (typeof window !== 'undefined') {
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      import('./components/Dashboard');
+      import('./components/VehicleDetail');
+      import('./components/ServiceForm');
+    }, 1000);
+  }, { once: true });
+}
+
 function PageLoader() {
   return (
     <div className="flex items-center justify-center py-20">
