@@ -267,6 +267,16 @@ router.get('/:id/download', async (req, res) => {
       return res.status(404).json({ error: 'Invoice not found.' });
     }
 
+    // Determine MIME type from file extension for proper inline display
+    const filename = invoice.originalName || 'invoice';
+    const ext = (invoice.fileType || path.extname(filename) || '').toLowerCase().replace(/^\./, '');
+    const mimeTypes = {
+      jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+      webp: 'image/webp', gif: 'image/gif', heic: 'image/heic',
+      bmp: 'image/bmp', tiff: 'image/tiff', pdf: 'application/pdf',
+    };
+    const mimeType = mimeTypes[ext] || 'application/octet-stream';
+
     if (isCloudStorage) {
       const fileId = extractGoogleDriveFileId(invoice.filePath);
       if (fileId) {
@@ -275,10 +285,8 @@ router.get('/:id/download', async (req, res) => {
           { fileId, alt: 'media' },
           { responseType: 'stream' }
         );
-        res.setHeader('Content-Disposition', `attachment; filename="${invoice.originalName || 'invoice'}"`);
-        if (response.headers['content-type']) {
-          res.setHeader('Content-Type', response.headers['content-type']);
-        }
+        res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+        res.setHeader('Content-Type', response.headers['content-type'] || mimeType);
         response.data.pipe(res);
         return;
       }
@@ -292,7 +300,9 @@ router.get('/:id/download', async (req, res) => {
       return res.status(404).json({ error: 'Invoice file not found on disk.' });
     }
 
-    res.download(fullPath, invoice.originalName || path.basename(invoice.filePath));
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    res.setHeader('Content-Type', mimeType);
+    res.sendFile(fullPath);
   } catch (error) {
     console.error('Error downloading invoice:', error.message);
     res.status(500).json({ error: 'Failed to download invoice.' });
