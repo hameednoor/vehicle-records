@@ -158,6 +158,7 @@ export default function Dashboard() {
       icon: AlertTriangle,
       color: 'text-amber-700 dark:text-amber-400',
       bg: 'bg-amber-50 dark:bg-amber-950/50',
+      onClick: () => setShowReminders(true),
     },
   ];
 
@@ -174,7 +175,11 @@ export default function Dashboard() {
         {loading
           ? [1, 2, 3, 4].map((i) => <StatCardSkeleton key={i} />)
           : statCards.map((stat) => (
-              <div key={stat.label} className="stat-card animate-slide-in-up">
+              <div
+                key={stat.label}
+                className={`stat-card animate-slide-in-up ${stat.onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+                onClick={stat.onClick || undefined}
+              >
                 <div className="flex items-center gap-3">
                   <div className={`p-2 rounded-lg ${stat.bg}`}>
                     <stat.icon className={`w-5 h-5 ${stat.color}`} />
@@ -328,7 +333,16 @@ export default function Dashboard() {
               {upcoming.length === 0 ? (
                 <p className="text-center text-gray-500 py-12">No upcoming reminders</p>
               ) : (
-                upcoming.map((item, idx) => {
+                [...upcoming].sort((a, b) => {
+                  // Overdue items first, then by date ascending (soonest first)
+                  const aOverdue = Number(a.isOverdue) === 1 || a.is_overdue === true;
+                  const bOverdue = Number(b.isOverdue) === 1 || b.is_overdue === true;
+                  if (aOverdue && !bOverdue) return -1;
+                  if (!aOverdue && bOverdue) return 1;
+                  const aDate = a.nextDueDate || '9999-12-31';
+                  const bDate = b.nextDueDate || '9999-12-31';
+                  return aDate.localeCompare(bDate);
+                }).map((item, idx) => {
                   const isOverdue = Number(item.isOverdue) === 1 || item.is_overdue === true;
                   return (
                     <div
@@ -363,11 +377,22 @@ export default function Dashboard() {
                           </p>
                         </div>
                         <div className="text-right">
-                          {item.nextDueDate && (
-                            <p className={`text-xs font-medium ${isOverdue ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                              {isOverdue ? 'Overdue' : 'Due'}: {item.nextDueDate}
-                            </p>
-                          )}
+                          {item.nextDueDate && (() => {
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            const target = new Date(item.nextDueDate + 'T00:00:00');
+                            const daysLeft = Math.round((target - today) / (1000 * 60 * 60 * 24));
+                            return (
+                              <p className={`text-xs font-medium ${isOverdue ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                                {item.nextDueDate}
+                                {daysLeft < 0
+                                  ? ` (${Math.abs(daysLeft)}d overdue)`
+                                  : daysLeft === 0
+                                  ? ' (today)'
+                                  : ` (${daysLeft}d left)`}
+                              </p>
+                            );
+                          })()}
                           {item.nextDueKms != null && (
                             <p className="text-xs text-gray-500 mt-0.5">
                               Due at {Number(item.nextDueKms).toLocaleString()} km
