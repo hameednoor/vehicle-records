@@ -166,11 +166,26 @@ export default function Reports() {
       if (trends.status === 'fulfilled') {
         const d = trends.value;
         const list = d?.trends || (Array.isArray(d) ? d : d?.data || []);
-        setMonthlyTrends(list.map((item) => ({
-          month: item.month,
-          total: Number(item.totalCost || item.total || item.cost || 0),
-          services: Number(item.serviceCount || item.services || 0),
-        })));
+        // Build a map of existing data keyed by month string
+        const dataMap = {};
+        for (const item of list) {
+          const key = item.month;
+          dataMap[key] = {
+            total: Number(item.totalCost || item.total || item.cost || 0),
+            services: Number(item.serviceCount || item.services || 0),
+          };
+        }
+        // Generate last 12 months rolling window
+        const months12 = [];
+        const now = new Date();
+        for (let i = 11; i >= 0; i--) {
+          const d2 = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const key = format(d2, 'yyyy-MM');
+          const label = format(d2, 'MMM yyyy');
+          const entry = dataMap[key] || { total: 0, services: 0 };
+          months12.push({ month: label, total: entry.total, services: entry.services });
+        }
+        setMonthlyTrends(months12);
       }
     } catch {
       showError('Failed to load reports');
@@ -489,7 +504,7 @@ export default function Reports() {
           ) : (
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={monthlyTrends.slice(-12)}>
+                <BarChart data={monthlyTrends}>
                   <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                   <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={50} />
                   <YAxis tick={{ fontSize: 11 }} />
