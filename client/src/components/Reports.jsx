@@ -496,24 +496,38 @@ export default function Reports() {
             Monthly Spend (Last 12 Months)
           </h3>
           {loading ? (
-            <Skeleton className="h-64 w-full rounded-lg" />
+            <Skeleton className="h-72 w-full rounded-lg" />
           ) : monthlyTrends.length === 0 ? (
-            <div className="h-64 flex items-center justify-center text-sm text-gray-400">
+            <div className="h-72 flex items-center justify-center text-sm text-gray-400">
               No data available
             </div>
           ) : (
-            <div className="h-64">
+            <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={monthlyTrends}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis dataKey="month" tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={50} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip content={<CustomTooltip />} />
+                <BarChart data={monthlyTrends} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid vertical={false} stroke="#E5E7EB" strokeOpacity={0.6} />
+                  <XAxis
+                    dataKey="month"
+                    tick={{ fontSize: 11, fill: '#6B7280' }}
+                    tickLine={false}
+                    axisLine={{ stroke: '#E5E7EB' }}
+                    interval={0}
+                    tickFormatter={(val) => val.split(' ')[0]}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: '#6B7280' }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(val) => val > 0 ? val.toLocaleString() : '0'}
+                    width={55}
+                  />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(27, 79, 114, 0.06)' }} />
                   <Bar
                     dataKey="total"
                     name="Spend"
-                    fill="#1B4F72"
+                    fill="#2E86C1"
                     radius={[4, 4, 0, 0]}
+                    maxBarSize={40}
                   />
                 </BarChart>
               </ResponsiveContainer>
