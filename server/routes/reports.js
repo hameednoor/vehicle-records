@@ -264,211 +264,286 @@ router.get('/export/pdf', async (req, res) => {
     const records = await db.all(
       `SELECT sr.date, v.name as vehicle, c.name as category,
               sr."kmsAtService" as kms, sr.cost, sr.currency,
-              sr.provider, sr.notes
+              sr.provider, sr.notes, sr."nextDueDate", sr."nextDueKms"
        FROM service_records sr
        JOIN vehicles v ON sr."vehicleId" = v.id
        JOIN categories c ON sr."categoryId" = c.id
        ${whereClause}
-       ORDER BY sr.date DESC`,
+       ORDER BY v.name ASC, sr.date DESC`,
       ...params
     );
 
     // Cost summary by vehicle
     const vehicleSummary = await db.all(
-      `SELECT v.name as "vehicleName",
+      `SELECT v.name as "vehicleName", v.make, v.model, v.year, v."currentKms",
               COALESCE(SUM(sr.cost), 0) as "totalCost",
-              COUNT(sr.id) as "serviceCount"
+              COUNT(sr.id) as "serviceCount",
+              MIN(sr.date) as "firstService",
+              MAX(sr.date) as "lastService"
        FROM vehicles v
        LEFT JOIN service_records sr ON sr."vehicleId" = v.id ${whereClause.replace('WHERE 1=1', '')}
-       GROUP BY v.id, v.name
+       GROUP BY v.id, v.name, v.make, v.model, v.year, v."currentKms"
+       HAVING COUNT(sr.id) > 0
+       ORDER BY "totalCost" DESC`,
+      ...params
+    );
+
+    // Cost by category
+    const categorySummary = await db.all(
+      `SELECT c.name as "categoryName",
+              COALESCE(SUM(sr.cost), 0) as "totalCost",
+              COUNT(sr.id) as "serviceCount"
+       FROM categories c
+       JOIN service_records sr ON sr."categoryId" = c.id
+       ${whereClause.replace('WHERE 1=1 AND', 'WHERE').replace('WHERE 1=1', '')}
+       GROUP BY c.id, c.name
        HAVING COUNT(sr.id) > 0
        ORDER BY "totalCost" DESC`,
       ...params
     );
 
     const grandTotal = vehicleSummary.reduce((sum, v) => sum + Number(v.totalCost), 0);
+    const totalServices = vehicleSummary.reduce((sum, v) => sum + Number(v.serviceCount), 0);
 
     // Get settings for currency
     const settings = await db.get('SELECT currency FROM settings WHERE id = 1');
     const currency = settings ? settings.currency : 'AED';
 
+    const today = new Date().toISOString().split('T')[0];
+
     // Build PDF
-    const doc = new PDFDocument({ margin: 50, size: 'A4' });
-    const filename = `vehicle-maintenance-report-${new Date().toISOString().split('T')[0]}.pdf`;
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    const filename = `vehicle-maintenance-report-${today}.pdf`;
+    const pageWidth = doc.page.width;
+    const contentWidth = pageWidth - 80; // 40px margin each side
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     doc.pipe(res);
 
-    // Header
-    doc
-      .rect(0, 0, doc.page.width, 80)
-      .fill('#1B4F72');
-
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(22)
-      .fillColor('#FFFFFF')
-      .text('Vehicle Maintenance Report', 50, 28);
-
-    doc.moveDown(2);
-    doc.y = 100;
-
-    // Subtitle with date range
-    doc.fillColor('#333333');
-    let subtitle = 'All Time';
-    if (startDate && endDate) {
-      subtitle = `${startDate} to ${endDate}`;
-    } else if (startDate) {
-      subtitle = `From ${startDate}`;
-    } else if (endDate) {
-      subtitle = `Until ${endDate}`;
+    // ── Helper functions ──
+    function drawTableHeader(cols, headers, y) {
+      doc.rect(40, y, contentWidth, 26).fill('#1B4F72');
+      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(10);
+      let x = 45;
+      headers.forEach((header, i) => {
+        const align = i === 0 ? 'left' : 'right';
+        doc.text(header, x, y + 7, { width: cols[i], align });
+        x += cols[i];
+      });
+      return y + 26;
     }
-    doc.fontSize(12).font('Helvetica').text(`Report Period: ${subtitle}`, 50);
-    doc.text(`Generated: ${new Date().toISOString().split('T')[0]}`, 50);
-    doc.moveDown(1);
 
-    // Summary section
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(16)
-      .fillColor('#1B4F72')
-      .text('Cost Summary by Vehicle', 50);
-    doc.moveDown(0.5);
-
-    // Draw summary table
-    const colWidths = [200, 100, 100, 95];
-    const headers = ['Vehicle', 'Services', `Total (${currency})`, 'Avg Cost'];
-
-    // Table header row
-    doc.rect(50, doc.y, 495, 22).fill('#1B4F72');
-    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(10);
-    let xPos = 55;
-    headers.forEach((header, i) => {
-      doc.text(header, xPos, doc.y + 5, { width: colWidths[i], align: i === 0 ? 'left' : 'right' });
-      xPos += colWidths[i];
-    });
-    doc.y += 22;
-
-    // Table rows
-    doc.fillColor('#333333').font('Helvetica').fontSize(10);
-    vehicleSummary.forEach((v, index) => {
-      const rowY = doc.y;
-      if (index % 2 === 0) {
-        doc.rect(50, rowY, 495, 20).fill('#F4F6F7');
+    function drawTableRow(cols, values, y, striped, aligns) {
+      if (striped) {
+        doc.rect(40, y, contentWidth, 22).fill('#F0F4F8');
       }
-      doc.fillColor('#333333');
+      doc.fillColor('#2C3E50').font('Helvetica').fontSize(10);
+      let x = 45;
+      values.forEach((val, i) => {
+        const align = aligns ? aligns[i] : (i === 0 ? 'left' : 'right');
+        doc.text(val, x, y + 6, { width: cols[i], align });
+        x += cols[i];
+      });
+      return y + 22;
+    }
+
+    function drawSectionTitle(title, y) {
+      if (y > 700) { doc.addPage(); y = 50; }
+      doc.font('Helvetica-Bold').fontSize(15).fillColor('#1B4F72');
+      doc.text(title, 40, y);
+      // underline
+      doc.moveTo(40, y + 20).lineTo(40 + contentWidth, y + 20).strokeColor('#BDC3C7').lineWidth(0.5).stroke();
+      return y + 30;
+    }
+
+    function checkPage(y, needed) {
+      if (y + needed > 760) { doc.addPage(); return 50; }
+      return y;
+    }
+
+    function addPageFooter() {
+      const pages = doc.bufferedPageRange();
+      for (let i = pages.start; i < pages.start + pages.count; i++) {
+        doc.switchToPage(i);
+        doc.font('Helvetica').fontSize(8).fillColor('#95A5A6');
+        doc.text(
+          `Vehicle Maintenance Tracker  |  Generated ${today}  |  Page ${i + 1} of ${pages.count}`,
+          40, doc.page.height - 30,
+          { align: 'center', width: contentWidth }
+        );
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // PAGE 1: HEADER
+    // ══════════════════════════════════════════════════════════
+
+    // Dark header band
+    doc.rect(0, 0, pageWidth, 100).fill('#1B4F72');
+
+    doc.font('Helvetica-Bold').fontSize(26).fillColor('#FFFFFF');
+    doc.text('Vehicle Maintenance Report', 40, 25);
+
+    // Subtitle line
+    let subtitle = 'Report Period: All Time';
+    if (startDate && endDate) {
+      subtitle = `Report Period: ${startDate} to ${endDate}`;
+    } else if (startDate) {
+      subtitle = `Report Period: From ${startDate}`;
+    } else if (endDate) {
+      subtitle = `Report Period: Until ${endDate}`;
+    }
+    doc.font('Helvetica').fontSize(12).fillColor('#AED6F1');
+    doc.text(subtitle, 40, 60);
+    doc.text(`Generated: ${today}`, 40, 76);
+
+    let y = 120;
+
+    // ── Summary boxes ──
+    const boxW = (contentWidth - 20) / 3;
+    const boxes = [
+      { label: 'Total Vehicles', value: vehicleSummary.length.toString() },
+      { label: 'Total Services', value: totalServices.toString() },
+      { label: `Total Spend (${currency})`, value: grandTotal.toLocaleString() },
+    ];
+
+    boxes.forEach((box, i) => {
+      const bx = 40 + i * (boxW + 10);
+      doc.rect(bx, y, boxW, 55).lineWidth(1).strokeColor('#D5D8DC').fillAndStroke('#FAFBFC', '#D5D8DC');
+      doc.font('Helvetica').fontSize(9).fillColor('#7F8C8D');
+      doc.text(box.label, bx + 10, y + 10, { width: boxW - 20 });
+      doc.font('Helvetica-Bold').fontSize(20).fillColor('#1B4F72');
+      doc.text(box.value, bx + 10, y + 28, { width: boxW - 20 });
+    });
+    y += 75;
+
+    // ══════════════════════════════════════════════════════════
+    // SECTION 1: COST SUMMARY BY VEHICLE
+    // ══════════════════════════════════════════════════════════
+    y = drawSectionTitle('Cost Summary by Vehicle', y);
+
+    const sumCols = [160, 70, 70, 90, 90, 35];
+    y = drawTableHeader(sumCols, ['Vehicle', 'Services', `Avg (${currency})`, `Total (${currency})`, 'Last Service', '%'], y);
+
+    vehicleSummary.forEach((v, index) => {
+      y = checkPage(y, 22);
       const totalCost = Number(v.totalCost);
       const svcCount = Number(v.serviceCount);
       const avgCost = svcCount > 0 ? Math.round(totalCost / svcCount) : 0;
+      const pct = grandTotal > 0 ? Math.round((totalCost / grandTotal) * 100) : 0;
+      const lastSvc = v.lastService || '-';
 
-      let x = 55;
-      doc.text(v.vehicleName, x, rowY + 5, { width: colWidths[0] });
-      x += colWidths[0];
-      doc.text(svcCount.toString(), x, rowY + 5, { width: colWidths[1], align: 'right' });
-      x += colWidths[1];
-      doc.text(totalCost.toLocaleString(), x, rowY + 5, { width: colWidths[2], align: 'right' });
-      x += colWidths[2];
-      doc.text(avgCost.toLocaleString(), x, rowY + 5, { width: colWidths[3], align: 'right' });
-      doc.y = rowY + 20;
+      y = drawTableRow(sumCols, [
+        truncate(v.vehicleName, 28),
+        svcCount.toString(),
+        avgCost.toLocaleString(),
+        totalCost.toLocaleString(),
+        lastSvc,
+        `${pct}%`,
+      ], y, index % 2 === 0);
     });
 
-    // Grand total
-    doc.rect(50, doc.y, 495, 22).fill('#1B4F72');
-    doc.fillColor('#FFFFFF').font('Helvetica-Bold');
-    doc.text('Grand Total', 55, doc.y + 5, { width: colWidths[0] });
-    doc.text(
-      grandTotal.toLocaleString(),
-      55 + colWidths[0] + colWidths[1],
-      doc.y + 5,
-      { width: colWidths[2], align: 'right' }
-    );
-    doc.y += 30;
+    // Grand total row
+    doc.rect(40, y, contentWidth, 26).fill('#1B4F72');
+    doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(11);
+    doc.text('Grand Total', 45, y + 7, { width: sumCols[0] });
+    doc.text(totalServices.toString(), 45 + sumCols[0], y + 7, { width: sumCols[1], align: 'right' });
+    doc.text(grandTotal.toLocaleString(), 45 + sumCols[0] + sumCols[1] + sumCols[2], y + 7, { width: sumCols[3], align: 'right' });
+    y += 40;
 
-    // Service records detail
-    if (records.length > 0) {
-      doc.moveDown(1);
+    // ══════════════════════════════════════════════════════════
+    // SECTION 2: COST BY CATEGORY
+    // ══════════════════════════════════════════════════════════
+    if (categorySummary.length > 0) {
+      y = checkPage(y, 80);
+      y = drawSectionTitle('Cost Breakdown by Category', y);
 
-      // Check if we need a new page
-      if (doc.y > 650) {
-        doc.addPage();
-      }
+      const catCols = [200, 100, 110, 105];
+      y = drawTableHeader(catCols, ['Category', 'Services', `Total (${currency})`, '% of Total'], y);
 
-      doc
-        .font('Helvetica-Bold')
-        .fontSize(16)
-        .fillColor('#1B4F72')
-        .text('Service Record Details', 50);
-      doc.moveDown(0.5);
+      categorySummary.forEach((c, index) => {
+        y = checkPage(y, 22);
+        const totalCost = Number(c.totalCost);
+        const svcCount = Number(c.serviceCount);
+        const pct = grandTotal > 0 ? ((totalCost / grandTotal) * 100).toFixed(1) : '0.0';
 
-      const detailCols = [70, 130, 100, 70, 70, 55];
-      const detailHeaders = ['Date', 'Vehicle', 'Category', 'KMs', `Cost`, 'Provider'];
-
-      doc.rect(50, doc.y, 495, 22).fill('#1B4F72');
-      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(9);
-      let dx = 55;
-      detailHeaders.forEach((header, i) => {
-        doc.text(header, dx, doc.y + 5, { width: detailCols[i] });
-        dx += detailCols[i];
+        y = drawTableRow(catCols, [
+          c.categoryName,
+          svcCount.toString(),
+          totalCost.toLocaleString(),
+          `${pct}%`,
+        ], y, index % 2 === 0);
       });
-      doc.y += 22;
+      y += 20;
+    }
 
-      doc.fillColor('#333333').font('Helvetica').fontSize(9);
+    // ══════════════════════════════════════════════════════════
+    // SECTION 3: SERVICE RECORD DETAILS (grouped by vehicle)
+    // ══════════════════════════════════════════════════════════
+    if (records.length > 0) {
+      y = checkPage(y, 80);
+      y = drawSectionTitle('Service Record Details', y);
 
-      // Limit records to avoid excessively long PDFs
-      const maxRecords = Math.min(records.length, 100);
-      for (let i = 0; i < maxRecords; i++) {
-        const r = records[i];
-
-        // New page if needed
-        if (doc.y > 740) {
-          doc.addPage();
-          doc.y = 50;
-        }
-
-        const rowY = doc.y;
-        if (i % 2 === 0) {
-          doc.rect(50, rowY, 495, 18).fill('#F4F6F7');
-        }
-        doc.fillColor('#333333');
-
-        let rx = 55;
-        doc.text(r.date || '', rx, rowY + 4, { width: detailCols[0] });
-        rx += detailCols[0];
-        doc.text(truncate(r.vehicle, 22), rx, rowY + 4, { width: detailCols[1] });
-        rx += detailCols[1];
-        doc.text(truncate(r.category, 16), rx, rowY + 4, { width: detailCols[2] });
-        rx += detailCols[2];
-        doc.text(r.kms ? Number(r.kms).toLocaleString() : '-', rx, rowY + 4, { width: detailCols[3] });
-        rx += detailCols[3];
-        doc.text(r.cost ? Number(r.cost).toLocaleString() : '0', rx, rowY + 4, { width: detailCols[4] });
-        rx += detailCols[4];
-        doc.text(truncate(r.provider || '-', 10), rx, rowY + 4, { width: detailCols[5] });
-
-        doc.y = rowY + 18;
+      // Group records by vehicle
+      const grouped = {};
+      for (const r of records) {
+        if (!grouped[r.vehicle]) grouped[r.vehicle] = [];
+        grouped[r.vehicle].push(r);
       }
 
-      if (records.length > maxRecords) {
-        doc.moveDown(0.5);
-        doc
-          .font('Helvetica-Oblique')
-          .fontSize(10)
-          .fillColor('#5D6D7E')
-          .text(`... and ${records.length - maxRecords} more records (use CSV export for full data).`, 50);
+      const detailCols = [72, 110, 65, 80, 90, 98];
+      const detailAligns = ['left', 'left', 'right', 'right', 'left', 'left'];
+
+      for (const [vehicleName, vehicleRecords] of Object.entries(grouped)) {
+        y = checkPage(y, 60);
+
+        // Vehicle sub-header
+        doc.rect(40, y, contentWidth, 22).fill('#2C3E50');
+        doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(11);
+        doc.text(`${vehicleName}  (${vehicleRecords.length} records)`, 45, y + 5);
+        y += 22;
+
+        y = drawTableHeader(detailCols, ['Date', 'Category', 'KMs', `Cost (${currency})`, 'Provider', 'Notes / Next Due'], y);
+
+        const maxRecords = Math.min(vehicleRecords.length, 50);
+        for (let i = 0; i < maxRecords; i++) {
+          y = checkPage(y, 22);
+          const r = vehicleRecords[i];
+          const cost = r.cost ? Number(r.cost).toLocaleString() : '0';
+          let extra = '';
+          if (r.nextDueDate) extra = `Due: ${r.nextDueDate}`;
+          else if (r.nextDueKms) extra = `Due: ${Number(r.nextDueKms).toLocaleString()} km`;
+          else if (r.notes) extra = truncate(r.notes, 16);
+          else extra = '-';
+
+          y = drawTableRow(detailCols, [
+            r.date || '-',
+            truncate(r.category, 18),
+            r.kms ? Number(r.kms).toLocaleString() : '-',
+            cost,
+            truncate(r.provider || '-', 14),
+            extra,
+          ], y, i % 2 === 0, detailAligns);
+        }
+
+        if (vehicleRecords.length > maxRecords) {
+          doc.font('Helvetica-Oblique').fontSize(9).fillColor('#7F8C8D');
+          doc.text(`... and ${vehicleRecords.length - maxRecords} more records`, 45, y + 4);
+          y += 18;
+        }
+
+        // Vehicle subtotal
+        const vehicleTotal = vehicleRecords.reduce((sum, r) => sum + Number(r.cost || 0), 0);
+        doc.rect(40, y, contentWidth, 20).fill('#EBF5FB');
+        doc.fillColor('#1B4F72').font('Helvetica-Bold').fontSize(10);
+        doc.text(`Subtotal: ${currency} ${vehicleTotal.toLocaleString()}`, 45, y + 5, { width: contentWidth - 10, align: 'right' });
+        y += 30;
       }
     }
 
-    // Footer
-    doc
-      .font('Helvetica')
-      .fontSize(8)
-      .fillColor('#999999')
-      .text(
-        'Generated by Vehicle Maintenance Tracker',
-        50,
-        doc.page.height - 40,
-        { align: 'center', width: doc.page.width - 100 }
-      );
+    // ── Page footers ──
+    addPageFooter();
 
     doc.end();
   } catch (error) {
