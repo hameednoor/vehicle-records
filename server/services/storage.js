@@ -145,6 +145,21 @@ async function findOrCreateFolder(name, parentId) {
     },
     fields: 'id',
   });
+
+  // Transfer folder ownership so it doesn't count against service account quota
+  const ownerEmail = process.env.SHARE_EMAIL || process.env.SMTP_USER;
+  if (ownerEmail) {
+    try {
+      await drive.permissions.create({
+        fileId: folder.data.id,
+        transferOwnership: true,
+        requestBody: { role: 'owner', type: 'user', emailAddress: ownerEmail },
+      });
+    } catch (err) {
+      console.warn(`[Drive] Folder ownership transfer failed: ${err.message}`);
+    }
+  }
+
   return folder.data.id;
 }
 
@@ -310,11 +325,32 @@ async function uploadFile(bucket, filePath, buffer, mimetype, options) {
 
     const fileId = file.data.id;
 
-    // Make publicly readable
-    await drive.permissions.create({
-      fileId,
-      requestBody: { role: 'reader', type: 'anyone' },
-    });
+    // Transfer ownership to the user's account so the file counts against
+    // their quota (service accounts have zero storage quota).
+    const ownerEmail = process.env.SHARE_EMAIL || process.env.SMTP_USER;
+    if (ownerEmail) {
+      try {
+        await drive.permissions.create({
+          fileId,
+          transferOwnership: true,
+          requestBody: { role: 'owner', type: 'user', emailAddress: ownerEmail },
+        });
+        console.log(`[Drive] Transferred ownership of ${fileId} to ${ownerEmail}`);
+      } catch (ownerErr) {
+        console.warn(`[Drive] Ownership transfer failed: ${ownerErr.message}`);
+        // Fall back to making publicly readable
+        await drive.permissions.create({
+          fileId,
+          requestBody: { role: 'reader', type: 'anyone' },
+        });
+      }
+    } else {
+      // No owner email configured — make publicly readable
+      await drive.permissions.create({
+        fileId,
+        requestBody: { role: 'reader', type: 'anyone' },
+      });
+    }
 
     return `https://drive.google.com/uc?id=${fileId}`;
   }
