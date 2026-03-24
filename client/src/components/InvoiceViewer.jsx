@@ -96,6 +96,10 @@ export default function InvoiceViewer({
   };
 
   const imageUrl = invoice.url || invoice.filePath || invoice.fileUrl || invoice.thumbnailUrl;
+  const isPdf =
+    (invoice.fileType || invoice.file_type || '').toLowerCase() === '.pdf' ||
+    (invoice.originalName || '').toLowerCase().endsWith('.pdf') ||
+    (imageUrl || '').toLowerCase().endsWith('.pdf');
   const ocrText = invoice.ocrText || invoice.ocr_text || '';
   const ocrCost = invoice.ocrCost || invoice.ocr_cost;
   const ocrCurrency = invoice.ocrCurrency || invoice.ocr_currency;
@@ -203,7 +207,14 @@ export default function InvoiceViewer({
             showOcr ? 'sm:mr-80' : ''
           }`}
         >
-          {imageUrl ? (
+          {imageUrl && isPdf ? (
+            <iframe
+              src={imageUrl}
+              title="Invoice PDF"
+              className="w-full h-full rounded-lg border-0"
+              style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}
+            />
+          ) : imageUrl ? (
             <img
               src={imageUrl}
               alt="Invoice"
