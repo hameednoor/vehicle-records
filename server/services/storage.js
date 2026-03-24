@@ -38,14 +38,40 @@ const isCloudStorage = !!(
 
 let driveClient = null;
 
+function parsePrivateKey(raw) {
+  if (!raw) return '';
+  // Remove surrounding quotes if pasted from .env
+  let key = raw.replace(/^["']|["']$/g, '');
+  // Replace literal \n sequences with real newlines
+  key = key.replace(/\\n/g, '\n');
+  // Remove any \r characters (Windows line endings)
+  key = key.replace(/\r/g, '');
+  // Ensure proper PEM formatting
+  if (key.includes('-----BEGIN') && !key.includes('\n')) {
+    // Key is all on one line — reformat it
+    key = key
+      .replace(/-----BEGIN PRIVATE KEY-----/, '-----BEGIN PRIVATE KEY-----\n')
+      .replace(/-----END PRIVATE KEY-----/, '\n-----END PRIVATE KEY-----\n');
+    // Split the base64 body into 64-char lines
+    const parts = key.split('\n');
+    const header = parts[0];
+    const footer = parts[parts.length - 2] || parts[parts.length - 1];
+    const body = parts.slice(1, -2).join('').replace(/\s/g, '');
+    const lines = body.match(/.{1,64}/g) || [];
+    key = [header, ...lines, footer, ''].join('\n');
+  }
+  return key;
+}
+
 function getDrive() {
   if (driveClient) return driveClient;
   const { drive } = require('@googleapis/drive');
   const { GoogleAuth } = require('google-auth-library');
+  const privateKey = parsePrivateKey(process.env.GOOGLE_PRIVATE_KEY);
   const auth = new GoogleAuth({
     credentials: {
       client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
+      private_key: privateKey,
     },
     scopes: ['https://www.googleapis.com/auth/drive'],
   });
