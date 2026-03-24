@@ -40,15 +40,16 @@ let driveClient = null;
 
 function getDrive() {
   if (driveClient) return driveClient;
-  const { google } = require('googleapis');
-  const auth = new google.auth.GoogleAuth({
+  const { drive } = require('@googleapis/drive');
+  const { GoogleAuth } = require('google-auth-library');
+  const auth = new GoogleAuth({
     credentials: {
       client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
       private_key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
     },
     scopes: ['https://www.googleapis.com/auth/drive'],
   });
-  driveClient = google.drive({ version: 'v3', auth });
+  driveClient = drive({ version: 'v3', auth });
   return driveClient;
 }
 
