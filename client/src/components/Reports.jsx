@@ -3,7 +3,7 @@ import {
   BarChart3,
   Download,
   Calendar,
-  DollarSign,
+  Coins,
   TrendingUp,
   Filter,
 } from 'lucide-react';
@@ -323,14 +323,14 @@ export default function Reports() {
             <div className="stat-card">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-violet-50 dark:bg-violet-950/50 rounded-lg">
-                  <DollarSign className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+                  <Coins className="w-5 h-5 text-violet-600 dark:text-violet-400" />
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Total Spend
+                    Total Spend (AED)
                   </p>
                   <p className="text-lg font-bold text-gray-900 dark:text-gray-50">
-                    AED {totalSpend.toLocaleString()}
+                    {totalSpend.toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -342,10 +342,10 @@ export default function Reports() {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Avg. Monthly
+                    Avg. Monthly (AED)
                   </p>
                   <p className="text-lg font-bold text-gray-900 dark:text-gray-50">
-                    AED {avgMonthly.toLocaleString()}
+                    {avgMonthly.toLocaleString()}
                   </p>
                 </div>
               </div>
