@@ -78,20 +78,29 @@ const upload = multer({
  * @param {string} [vehicleName] - vehicle name for folder structure
  */
 async function transferToCloud(files, bucket, vehicleName) {
-  if (!isCloudStorage || !files || files.length === 0) return;
+  if (!files || files.length === 0) return;
+
+  if (!isCloudStorage) {
+    if (process.env.VERCEL) {
+      console.error('CRITICAL: Cloud storage not configured on Vercel! Files will be lost.');
+      console.error('Set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY in Vercel env vars.');
+    }
+    return;
+  }
 
   for (const file of files) {
     try {
       const buffer = fs.readFileSync(file.path);
       const cloudUrl = await uploadFile(bucket, file.filename, buffer, file.mimetype, { vehicleName });
       file.cloudUrl = cloudUrl;
+      console.log(`Uploaded to Google Drive: ${file.originalname} -> ${cloudUrl}`);
       // Remove local temp file
       if (fs.existsSync(file.path)) {
         fs.unlinkSync(file.path);
       }
     } catch (err) {
       console.error(`Failed to transfer ${file.filename} to cloud:`, err.message);
-      // Keep local file as fallback
+      throw new Error(`Cloud upload failed for ${file.originalname}: ${err.message}`);
     }
   }
 }

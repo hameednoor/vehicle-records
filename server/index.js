@@ -29,6 +29,11 @@ function serverCacheMiddleware(req, res, next) {
     return next();
   }
 
+  // Skip caching for binary endpoints (downloads, exports)
+  if (req.originalUrl.includes('/download') || req.originalUrl.includes('/export')) {
+    return next();
+  }
+
   const key = getCacheKey(req);
   const entry = serverCache.get(key);
   if (entry && Date.now() - entry.time < SERVER_CACHE_TTL) {
@@ -121,6 +126,10 @@ function mountRoutes() {
       uptime: process.uptime(),
       database: process.env.DATABASE_URL ? 'postgresql' : 'sqlite',
       storage: isCloudStorage ? 'google-drive' : 'local',
+      vercel: !!process.env.VERCEL,
+      googleDriveConfigured: !!(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY),
+      googleServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || 'NOT SET',
+      geminiConfigured: !!process.env.GEMINI_API_KEY,
     });
   });
 

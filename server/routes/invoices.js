@@ -277,9 +277,10 @@ router.get('/:id/download', async (req, res) => {
     };
     const mimeType = mimeTypes[ext] || 'application/octet-stream';
 
-    if (isCloudStorage) {
-      const fileId = extractGoogleDriveFileId(invoice.filePath);
-      if (fileId) {
+    // Try Google Drive first (check if filePath contains a Drive file ID)
+    const fileId = extractGoogleDriveFileId(invoice.filePath);
+    if (fileId && isCloudStorage) {
+      try {
         const drive = getDrive();
         const response = await drive.files.get(
           { fileId, alt: 'media' },
@@ -289,20 +290,30 @@ router.get('/:id/download', async (req, res) => {
         res.setHeader('Content-Type', response.headers['content-type'] || mimeType);
         response.data.pipe(res);
         return;
+      } catch (driveErr) {
+        console.error(`Google Drive download failed for ${fileId}:`, driveErr.message);
+        return res.status(404).json({
+          error: 'File not accessible on Google Drive. It may have been deleted.',
+        });
       }
-      // Fallback: redirect to stored URL
-      return res.redirect(invoice.filePath);
     }
 
+    // Try local file system
     const fullPath = path.join(UPLOADS_DIR, path.basename(invoice.filePath));
-
-    if (!fs.existsSync(fullPath)) {
-      return res.status(404).json({ error: 'Invoice file not found on disk.' });
+    if (fs.existsSync(fullPath)) {
+      res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+      res.setHeader('Content-Type', mimeType);
+      res.sendFile(fullPath);
+      return;
     }
 
-    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
-    res.setHeader('Content-Type', mimeType);
-    res.sendFile(fullPath);
+    // File is not on Google Drive and not on local disk
+    const isLocalPath = invoice.filePath && (invoice.filePath.startsWith('/uploads/') || !invoice.filePath.startsWith('http'));
+    return res.status(404).json({
+      error: isLocalPath
+        ? 'File was stored locally and lost (Vercel restarts clear temp files). Please re-upload this invoice.'
+        : 'File not found.',
+    });
   } catch (error) {
     console.error('Error downloading invoice:', error.message);
     res.status(500).json({ error: 'Failed to download invoice.' });

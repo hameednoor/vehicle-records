@@ -173,13 +173,41 @@ function extractGoogleDriveFileId(url) {
 // ---------------------------------------------------------------------------
 
 /**
- * Ensure storage is ready (create root folder on Google Drive).
+ * Ensure storage is ready (create root folder on Google Drive and share it).
  */
 async function ensureBuckets() {
-  if (!isCloudStorage) return;
+  if (!isCloudStorage) {
+    console.warn('WARNING: Google Drive storage NOT configured. Files will be stored locally (lost on Vercel restarts).');
+    console.warn('Set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY environment variables.');
+    return;
+  }
 
   try {
-    await ensureRootFolder();
+    const folderId = await ensureRootFolder();
+
+    // Share the root folder with the user so they can see it in their Google Drive
+    const shareEmail = process.env.SMTP_USER || process.env.SHARE_EMAIL;
+    if (shareEmail) {
+      try {
+        const drive = getDrive();
+        // Check if already shared
+        const perms = await drive.permissions.list({ fileId: folderId, fields: 'permissions(emailAddress,role)' });
+        const alreadyShared = perms.data.permissions?.some(
+          (p) => p.emailAddress && p.emailAddress.toLowerCase() === shareEmail.toLowerCase()
+        );
+        if (!alreadyShared) {
+          await drive.permissions.create({
+            fileId: folderId,
+            requestBody: { role: 'writer', type: 'user', emailAddress: shareEmail },
+            sendNotificationEmail: false,
+          });
+          console.log(`Shared "Vehicle Records" folder with ${shareEmail}`);
+        }
+      } catch (shareErr) {
+        console.warn('Could not share Drive folder:', shareErr.message);
+      }
+    }
+
     console.log('Google Drive storage ready.');
   } catch (err) {
     console.error('Failed to initialize Google Drive storage:', err.message);
