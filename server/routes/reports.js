@@ -423,7 +423,7 @@ router.get('/export/pdf', async (req, res) => {
     // ══════════════════════════════════════════════════════════
     y = drawSectionTitle('Cost Summary by Vehicle', y);
 
-    const sumCols = [160, 70, 70, 90, 90, 35];
+    const sumCols = [150, 55, 70, 85, 85, 50];
     y = drawTableHeader(sumCols, ['Vehicle', 'Services', `Avg (${currency})`, `Total (${currency})`, 'Last Service', '%'], y);
 
     vehicleSummary.forEach((v, index) => {
