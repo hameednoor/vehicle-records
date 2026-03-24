@@ -1,8 +1,11 @@
 /**
  * File storage abstraction.
  *
- * When GOOGLE_SERVICE_ACCOUNT_EMAIL is set -> uses Google Drive
- * When it is not                          -> uses local filesystem (server/uploads/)
+ * Auth priority:
+ *   1. OAuth2 (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN)
+ *      -> Files are owned by the user's account (has storage quota)
+ *   2. Service account (GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_PRIVATE_KEY)
+ *      -> Legacy fallback (service accounts have zero quota as of 2024)
  *
  * Folder structure on Google Drive:
  *   Vehicle Records/
@@ -28,9 +31,18 @@ const UPLOADS_DIR = process.env.VERCEL
   ? '/tmp/uploads'
   : path.join(__dirname, '..', 'uploads');
 
-const isCloudStorage = !!(
+// Cloud storage is enabled if OAuth2 OR service account credentials are set
+const hasOAuth = !!(
+  process.env.GOOGLE_CLIENT_ID &&
+  process.env.GOOGLE_CLIENT_SECRET &&
+  process.env.GOOGLE_REFRESH_TOKEN
+);
+
+const hasServiceAccount = !!(
   process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY
 );
+
+const isCloudStorage = hasOAuth || hasServiceAccount;
 
 // ---------------------------------------------------------------------------
 // Google Drive client (lazy-initialized, cached across warm invocations)
@@ -48,8 +60,6 @@ function parsePrivateKey(raw) {
       const decoded = Buffer.from(base64Key, 'base64').toString('utf8');
       if (decoded.includes('PRIVATE KEY')) {
         console.log('[Drive] Private key decoded from GOOGLE_PRIVATE_KEY_BASE64');
-        const lineCount = decoded.split('\n').length;
-        console.log(`[Drive] Key shape: ${decoded.length} chars, ${lineCount} lines, header=true, footer=true`);
         return decoded;
       }
     } catch (err) {
@@ -57,20 +67,18 @@ function parsePrivateKey(raw) {
     }
   }
 
-  // Method 1: Try JSON.parse — handles "...\n..." with proper escape processing
+  // Method 1: Try JSON.parse
   try {
     const parsed = JSON.parse(raw);
     if (typeof parsed === 'string' && parsed.includes('PRIVATE KEY')) {
-      console.log('[Drive] Private key parsed via JSON.parse (quoted value)');
       return parsed;
     }
   } catch {}
 
-  // Method 2: Wrap in quotes and JSON.parse — handles \n as JSON escapes
+  // Method 2: Wrap in quotes and JSON.parse
   try {
     const parsed = JSON.parse(`"${raw.replace(/"/g, '\\"')}"`);
     if (typeof parsed === 'string' && parsed.includes('PRIVATE KEY')) {
-      console.log('[Drive] Private key parsed via JSON.parse (unquoted value)');
       return parsed;
     }
   } catch {}
@@ -80,7 +88,6 @@ function parsePrivateKey(raw) {
   key = key.replace(/\\n/g, '\n');
   key = key.replace(/\r/g, '');
 
-  // If still no newlines, reformat the PEM
   if (key.includes('-----BEGIN') && key.indexOf('\n') === -1) {
     const b64 = key
       .replace(/-----BEGIN PRIVATE KEY-----/, '')
@@ -88,16 +95,7 @@ function parsePrivateKey(raw) {
       .replace(/\s/g, '');
     const lines = b64.match(/.{1,64}/g) || [];
     key = ['-----BEGIN PRIVATE KEY-----', ...lines, '-----END PRIVATE KEY-----', ''].join('\n');
-    console.log('[Drive] Private key reformatted from single line');
-  } else {
-    console.log('[Drive] Private key parsed via manual replacement');
   }
-
-  // Debug: log key shape (not the key itself)
-  const lineCount = key.split('\n').length;
-  const hasHeader = key.includes('-----BEGIN PRIVATE KEY-----');
-  const hasFooter = key.includes('-----END PRIVATE KEY-----');
-  console.log(`[Drive] Key shape: ${key.length} chars, ${lineCount} lines, header=${hasHeader}, footer=${hasFooter}`);
 
   return key;
 }
@@ -105,6 +103,21 @@ function parsePrivateKey(raw) {
 function getDrive() {
   if (driveClient) return driveClient;
   const { drive } = require('@googleapis/drive');
+
+  // Prefer OAuth2 — files are owned by the user (has storage quota)
+  if (hasOAuth) {
+    const { OAuth2Client } = require('google-auth-library');
+    const oauth2 = new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET
+    );
+    oauth2.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
+    driveClient = drive({ version: 'v3', auth: oauth2 });
+    console.log('[Drive] Using OAuth2 (user account — has storage quota)');
+    return driveClient;
+  }
+
+  // Fall back to service account
   const { GoogleAuth } = require('google-auth-library');
   const privateKey = parsePrivateKey(process.env.GOOGLE_PRIVATE_KEY);
   const auth = new GoogleAuth({
@@ -115,6 +128,7 @@ function getDrive() {
     scopes: ['https://www.googleapis.com/auth/drive'],
   });
   driveClient = drive({ version: 'v3', auth });
+  console.log('[Drive] Using service account (WARNING: no storage quota)');
   return driveClient;
 }
 
@@ -146,20 +160,6 @@ async function findOrCreateFolder(name, parentId) {
     fields: 'id',
   });
 
-  // Transfer folder ownership so it doesn't count against service account quota
-  const ownerEmail = process.env.SHARE_EMAIL || process.env.SMTP_USER;
-  if (ownerEmail) {
-    try {
-      await drive.permissions.create({
-        fileId: folder.data.id,
-        transferOwnership: true,
-        requestBody: { role: 'owner', type: 'user', emailAddress: ownerEmail },
-      });
-    } catch (err) {
-      console.warn(`[Drive] Folder ownership transfer failed: ${err.message}`);
-    }
-  }
-
   return folder.data.id;
 }
 
@@ -174,7 +174,6 @@ async function ensureRootFolder() {
     return rootFolderId;
   }
 
-  // Search in the service account's Drive root
   const drive = getDrive();
   const q = `name='Vehicle Records' and 'root' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
   const res = await drive.files.list({ q, fields: 'files(id)', pageSize: 1 });
@@ -253,42 +252,17 @@ function extractGoogleDriveFileId(url) {
 // ---------------------------------------------------------------------------
 
 /**
- * Ensure storage is ready (create root folder on Google Drive and share it).
+ * Ensure storage is ready.
  */
 async function ensureBuckets() {
   if (!isCloudStorage) {
     console.warn('WARNING: Google Drive storage NOT configured. Files will be stored locally (lost on Vercel restarts).');
-    console.warn('Set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY environment variables.');
     return;
   }
 
   try {
-    const folderId = await ensureRootFolder();
-
-    // Share the root folder with the user so they can see it in their Google Drive
-    const shareEmail = process.env.SMTP_USER || process.env.SHARE_EMAIL;
-    if (shareEmail) {
-      try {
-        const drive = getDrive();
-        // Check if already shared
-        const perms = await drive.permissions.list({ fileId: folderId, fields: 'permissions(emailAddress,role)' });
-        const alreadyShared = perms.data.permissions?.some(
-          (p) => p.emailAddress && p.emailAddress.toLowerCase() === shareEmail.toLowerCase()
-        );
-        if (!alreadyShared) {
-          await drive.permissions.create({
-            fileId: folderId,
-            requestBody: { role: 'writer', type: 'user', emailAddress: shareEmail },
-            sendNotificationEmail: false,
-          });
-          console.log(`Shared "Vehicle Records" folder with ${shareEmail}`);
-        }
-      } catch (shareErr) {
-        console.warn('Could not share Drive folder:', shareErr.message);
-      }
-    }
-
-    console.log('Google Drive storage ready.');
+    await ensureRootFolder();
+    console.log(`Google Drive storage ready (mode: ${hasOAuth ? 'OAuth2' : 'service-account'}).`);
   } catch (err) {
     console.error('Failed to initialize Google Drive storage:', err.message);
   }
@@ -324,34 +298,6 @@ async function uploadFile(bucket, filePath, buffer, mimetype, options) {
     });
 
     const fileId = file.data.id;
-
-    // Transfer ownership to the user's account so the file counts against
-    // their quota (service accounts have zero storage quota).
-    const ownerEmail = process.env.SHARE_EMAIL || process.env.SMTP_USER;
-    if (ownerEmail) {
-      try {
-        await drive.permissions.create({
-          fileId,
-          transferOwnership: true,
-          requestBody: { role: 'owner', type: 'user', emailAddress: ownerEmail },
-        });
-        console.log(`[Drive] Transferred ownership of ${fileId} to ${ownerEmail}`);
-      } catch (ownerErr) {
-        console.warn(`[Drive] Ownership transfer failed: ${ownerErr.message}`);
-        // Fall back to making publicly readable
-        await drive.permissions.create({
-          fileId,
-          requestBody: { role: 'reader', type: 'anyone' },
-        });
-      }
-    } else {
-      // No owner email configured — make publicly readable
-      await drive.permissions.create({
-        fileId,
-        requestBody: { role: 'reader', type: 'anyone' },
-      });
-    }
-
     return `https://drive.google.com/uc?id=${fileId}`;
   }
 
@@ -401,7 +347,6 @@ async function deleteFile(bucket, filePath) {
  */
 async function getFileUrl(bucket, filePath) {
   if (isCloudStorage) {
-    // filePath is already a full Google Drive URL
     if (filePath && filePath.startsWith('https://')) return filePath;
     return filePath;
   }

@@ -126,6 +126,7 @@ function mountRoutes() {
       uptime: process.uptime(),
       database: process.env.DATABASE_URL ? 'postgresql' : 'sqlite',
       storage: isCloudStorage ? 'google-drive' : 'local',
+      driveAuthMode: process.env.GOOGLE_REFRESH_TOKEN ? 'oauth2' : (isCloudStorage ? 'service-account' : 'none'),
       vercel: !!process.env.VERCEL,
       googleDriveConfigured: !!(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY),
       googleServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || 'NOT SET',
