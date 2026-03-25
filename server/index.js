@@ -114,12 +114,15 @@ function mountRoutes() {
   // Auth routes (public — no token required)
   app.use('/api/auth', authRoutes);
 
+  // Invoices: download is public (browser <img> tags can't send auth headers),
+  // all other invoice routes require auth (handled inside the router)
+  app.use('/api/invoices', invoiceRoutes);
+
   // All other routes require authentication
   app.use('/api/users', userRoutes);
   app.use('/api/vehicles', requireAuth, vehicleRoutes);
   app.use('/api/categories', requireAuth, categoryRoutes);
   app.use('/api/service-records', requireAuth, serviceRecordRoutes);
-  app.use('/api/invoices', requireAuth, invoiceRoutes);
   app.use('/api/km-logs', requireAuth, kmLogRoutes);
   app.use('/api/reminders', requireAuth, reminderRoutes);
   app.use('/api/settings', requireAuth, settingsRoutes);

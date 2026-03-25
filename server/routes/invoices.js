@@ -8,13 +8,15 @@ const { analyzeInvoice } = require('../services/ocr');
 const { deleteFile, isCloudStorage, getDrive, extractGoogleDriveFileId, UPLOADS_DIR } = require('../services/storage');
 const { upload } = require('../middleware/upload');
 
+const { requireAuth } = require('../middleware/auth');
+
 const router = express.Router();
 
 /**
  * POST /analyze - Upload a single invoice image and extract data via Gemini AI.
  * Returns { cost, currency, provider, rawText } without creating any DB records.
  */
-router.post('/analyze', upload.single('invoice'), async (req, res) => {
+router.post('/analyze', requireAuth, upload.single('invoice'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded.' });
@@ -47,7 +49,7 @@ router.post('/analyze', upload.single('invoice'), async (req, res) => {
  * POST /upload/:serviceRecordId - Upload one or more invoices.
  * Triggers OCR processing in the background for image files.
  */
-router.post('/upload/:serviceRecordId', arrayUpload, async (req, res) => {
+router.post('/upload/:serviceRecordId', requireAuth, arrayUpload, async (req, res) => {
   try {
     const db = getDb();
     const { serviceRecordId } = req.params;
@@ -137,7 +139,7 @@ router.post('/upload/:serviceRecordId', arrayUpload, async (req, res) => {
 /**
  * GET /search - Full-text search across OCR text.
  */
-router.get('/search', async (req, res) => {
+router.get('/search', requireAuth, async (req, res) => {
   try {
     const db = getDb();
     const { q, vehicleId } = req.query;
@@ -175,7 +177,7 @@ router.get('/search', async (req, res) => {
 /**
  * GET /service/:serviceRecordId - Get all invoices for a service record.
  */
-router.get('/service/:serviceRecordId', async (req, res) => {
+router.get('/service/:serviceRecordId', requireAuth, async (req, res) => {
   try {
     const db = getDb();
 
@@ -260,7 +262,7 @@ router.get('/:id/download', async (req, res) => {
 /**
  * GET /:id - Get invoice details.
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireAuth, async (req, res) => {
   try {
     const db = getDb();
     const invoice = await db.get('SELECT * FROM invoices WHERE id = ?', req.params.id);
@@ -279,7 +281,7 @@ router.get('/:id', async (req, res) => {
 /**
  * DELETE /:id - Delete an invoice and its file.
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const db = getDb();
     const invoice = await db.get('SELECT * FROM invoices WHERE id = ?', req.params.id);
