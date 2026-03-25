@@ -15,16 +15,17 @@ const router = express.Router();
 router.get('/upcoming', async (req, res) => {
   try {
     const db = getDb();
-    const settings = await db.get('SELECT * FROM settings WHERE id = 1');
-    const bufferDays = settings ? settings.reminderBufferDays : 7;
-    const bufferKms = settings ? settings.reminderBufferKms : 500;
-
     const today = new Date().toISOString().split('T')[0];
-    const bufferDate = new Date();
-    bufferDate.setDate(bufferDate.getDate() + bufferDays);
-    const bufferDateStr = bufferDate.toISOString().split('T')[0];
 
-    // Date-based upcoming/overdue
+    // Show all services with a due date within the next 90 days (or already overdue)
+    const displayDate = new Date();
+    displayDate.setDate(displayDate.getDate() + 90);
+    const displayDateStr = displayDate.toISOString().split('T')[0];
+
+    // Display window for KMs: current + 5000
+    const displayBufferKms = 5000;
+
+    // Date-based: overdue + upcoming within 90 days
     const dateRecords = await db.all(
       `SELECT sr.*, c.name as "categoryName", v.name as "vehicleName", v."currentKms",
               CASE WHEN sr."nextDueDate" < ? THEN 1 ELSE 0 END as "isOverdue"
@@ -33,10 +34,10 @@ router.get('/upcoming', async (req, res) => {
        JOIN vehicles v ON sr."vehicleId" = v.id
        WHERE sr."nextDueDate" IS NOT NULL AND sr."nextDueDate" <= ?
        ORDER BY sr."nextDueDate" ASC`,
-      today, bufferDateStr
+      today, displayDateStr
     );
 
-    // KM-based upcoming/overdue
+    // KM-based: overdue + upcoming within 5000 km
     const kmsRecords = await db.all(
       `SELECT sr.*, c.name as "categoryName", v.name as "vehicleName", v."currentKms",
               CASE WHEN sr."nextDueKms" <= v."currentKms" THEN 1 ELSE 0 END as "isOverdue"
@@ -44,7 +45,7 @@ router.get('/upcoming', async (req, res) => {
        JOIN categories c ON sr."categoryId" = c.id
        JOIN vehicles v ON sr."vehicleId" = v.id
        WHERE sr."nextDueKms" IS NOT NULL AND sr."nextDueKms" <= (v."currentKms" + ?)`,
-      bufferKms
+      displayBufferKms
     );
 
     // Merge and deduplicate (keep overdue status if either source marks it)
@@ -53,7 +54,6 @@ router.get('/upcoming', async (req, res) => {
 
     for (const record of [...dateRecords, ...kmsRecords]) {
       if (seen.has(record.id)) {
-        // If this duplicate is overdue but the existing one isn't, upgrade it
         const existing = seen.get(record.id);
         if (Number(record.isOverdue) === 1 && Number(existing.isOverdue) !== 1) {
           existing.isOverdue = 1;
