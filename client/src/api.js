@@ -27,10 +27,10 @@ function updateBothCaches(key, data) {
 }
 
 export function invalidateCache(prefix) {
-  for (const key of memCache.keys()) {
-    if (key.startsWith(prefix)) memCache.delete(key);
-  }
-  deleteCacheByPrefix(prefix).catch(() => {});
+  // Clear all caches on any mutation — data is small and cross-dependent
+  // (e.g. deleting a service record affects reports, vehicles stats, upcoming, etc.)
+  memCache.clear();
+  clearAllCache().catch(() => {});
 }
 
 function cachedGet(url, params) {
