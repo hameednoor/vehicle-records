@@ -4,6 +4,7 @@
   "outputDirectory": "client/dist",
   "installCommand": "npm install && cd server && npm install && cd ../client && npm install --include=dev",
   "regions": ["hnd1"],
+  "buildCommand": "cd client && npm install && npm run build",
   "functions": {
     "api/index.js": {
       "memory": 1024,
